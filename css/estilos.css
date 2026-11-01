@@ -163,10 +163,10 @@ button.cerrar {
   position: absolute;
   z-index: 4;
   top: auto;
-  bottom: 78px;
-  right: max(10px, env(safe-area-inset-right));
-  width: 108px;
-  height: 68px;
+  bottom: 88px;
+  right: max(12px, env(safe-area-inset-right));
+  width: 140px;
+  height: 90px;
   border: 2px solid var(--amarillo);
   border-radius: 4px;
   background: #243018;
@@ -404,7 +404,7 @@ button.insuficiente {
 }
 
 @media (max-height: 420px) {
-  #minimapa { width: 92px; height: 58px; bottom: 62px; top: auto; }
+  #minimapa { width: 112px; height: 72px; bottom: 66px; top: auto; }
   #pista { top: 42px; font-size: 14px; max-width: calc(100vw - 20px); }
   #cargando { font-size: 26px; }
   #barra-superior { min-height: 38px; }
