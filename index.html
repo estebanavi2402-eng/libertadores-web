@@ -14,6 +14,7 @@
 <body>
   <div id="escenario">
     <canvas id="lienzo" width="800" height="400"></canvas>
+    <div id="cargando" role="status">Cargando…</div>
 
     <header id="barra-superior">
       <div class="marca">
@@ -44,12 +45,15 @@
       </div>
     </header>
 
-    <p id="pista">Tus aldeanos esperan orden.</p>
+    <div id="pista">
+      <p id="pista-texto">Tus aldeanos esperan orden.</p>
+      <button type="button" id="btn-cerrar-pista" class="cerrar">Cerrar</button>
+    </div>
     <canvas id="minimapa" width="132" height="84" aria-label="Minimapa. Toca para mover la vista."></canvas>
 
     <footer id="barra-inferior">
       <div id="grupo-sistema">
-        <button type="button" id="btn-todos" class="secundario">Seleccionar todos</button>
+        <button type="button" id="btn-ejercito" class="secundario" title="Atajo: Q o coma">Seleccionar ejército</button>
         <button type="button" id="btn-reiniciar" class="secundario">Reiniciar</button>
       </div>
       <div id="ficha">
