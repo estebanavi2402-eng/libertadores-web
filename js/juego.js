@@ -2031,13 +2031,45 @@ function contorno(g, ancho) {
   g.stroke();
 }
 
+const ARTE_UNIDAD = {
+  aldeano_patriota: 'aldeano_patriota',
+  aldeano_realista: 'aldeano_realista',
+  fusilero: 'infanteria_gran_colombia',
+  lancero: 'lancero_llanero',
+  fusilero_realista: 'infanteria_realista',
+  dragon: 'husares_fernando_vii',
+};
+const PIVOTE = { x: 0.5, desdeAbajo: 0.05 };
+const arteUnidades = {};
+
+function nombreArte(u) {
+  if (u.tipo === 'aldeano') return u.equipo === 'patriota' ? 'aldeano_patriota' : 'aldeano_realista';
+  return ARTE_UNIDAD[u.tipo] || 'infanteria_realista';
+}
+
+function tamanoSprite(u) {
+  return (u.tipo === 'lancero' || u.tipo === 'dragon') ? 84 : 64;
+}
+
+function cargarArteUnidades() {
+  Object.keys(ARTE_UNIDAD).forEach((clave) => {
+    const nombre = ARTE_UNIDAD[clave];
+    if (arteUnidades[nombre + '_r']) return;
+    ['r', 'l'].forEach((lado) => {
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = 'assets/units/' + nombre + '_idle_' + lado + '_256.png';
+      arteUnidades[nombre + '_' + lado] = img;
+    });
+  });
+}
+
+function imagenUnidad(u) {
+  const lado = u.frente < 0 ? 'l' : 'r';
+  return arteUnidades[nombreArte(u) + '_' + lado] || null;
+}
+
 function generarSprites() {
-  sprites.aldeanoP = pintarAldeano('patriota');
-  sprites.aldeanoR = pintarAldeano('realista');
-  sprites.fusileroP = pintarFusilero('patriota');
-  sprites.fusileroR = pintarFusilero('realista');
-  sprites.lanceroP = pintarLancero('patriota');
-  sprites.dragonR = pintarLancero('realista');
   sprites.arbol0 = pintarArbol('#2f6b32', '#3f8a3c');
   sprites.arbol1 = pintarArbol('#24562c', '#2f7a38');
   sprites.arbol2 = pintarArbol('#3d6b28', '#6a8f32');
@@ -2055,169 +2087,6 @@ function lienzoSprite(w, h, pintar) {
   return c;
 }
 
-function pintarAldeano(equipo) {
-  return lienzoSprite(64, 64, (g) => {
-    g.fillStyle = 'rgba(0,0,0,0.22)';
-    g.beginPath();
-    g.ellipse(32, 56, 14, 5, 0, 0, Math.PI * 2);
-    g.fill();
-    g.strokeStyle = '#3a2a1c';
-    g.lineWidth = 3;
-    g.beginPath();
-    g.moveTo(26, 44);
-    g.lineTo(24, 54);
-    g.moveTo(36, 44);
-    g.lineTo(40, 54);
-    g.stroke();
-    g.fillStyle = equipo === 'patriota' ? '#1f4e89' : '#8d1f1f';
-    g.fillRect(22, 30, 20, 16);
-    contorno(g);
-    g.strokeStyle = equipo === 'patriota' ? '#e2b33a' : '#f4f4f4';
-    g.lineWidth = 3;
-    g.beginPath();
-    g.moveTo(24, 34);
-    g.lineTo(40, 42);
-    g.stroke();
-    g.fillStyle = '#efc09a';
-    g.beginPath();
-    g.arc(32, 24, 8, 0, Math.PI * 2);
-    g.fill();
-    contorno(g);
-    if (equipo === 'patriota') {
-      g.fillStyle = '#e2b33a';
-      g.beginPath();
-      g.ellipse(32, 20, 12, 4, 0, 0, Math.PI * 2);
-      g.fill();
-      g.fillStyle = '#c0392b';
-      g.fillRect(26, 11, 12, 8);
-      contorno(g, 2);
-    } else {
-      g.fillStyle = '#222';
-      g.fillRect(24, 12, 16, 8);
-      g.fillRect(22, 18, 20, 3);
-    }
-    g.strokeStyle = '#6b4428';
-    g.lineWidth = 3;
-    g.beginPath();
-    g.moveTo(42, 36);
-    g.lineTo(54, 22);
-    g.stroke();
-    g.fillStyle = '#c5c5c5';
-    g.beginPath();
-    g.moveTo(50, 26);
-    g.lineTo(58, 18);
-    g.lineTo(54, 16);
-    g.fill();
-  });
-}
-
-function pintarFusilero(equipo) {
-  return lienzoSprite(64, 64, (g) => {
-    g.fillStyle = 'rgba(0,0,0,0.22)';
-    g.beginPath();
-    g.ellipse(30, 57, 13, 5, 0, 0, Math.PI * 2);
-    g.fill();
-    g.strokeStyle = '#2a2118';
-    g.lineWidth = 3;
-    g.beginPath();
-    g.moveTo(24, 46);
-    g.lineTo(22, 56);
-    g.moveTo(34, 46);
-    g.lineTo(36, 56);
-    g.stroke();
-    g.fillStyle = equipo === 'patriota' ? '#1f4e89' : '#8d1f1f';
-    g.fillRect(18, 28, 24, 20);
-    contorno(g);
-    g.strokeStyle = '#f4f4f4';
-    g.lineWidth = 2;
-    g.beginPath();
-    g.moveTo(20, 30);
-    g.lineTo(38, 46);
-    g.stroke();
-    g.fillStyle = equipo === 'patriota' ? '#c0392b' : '#f4f4f4';
-    g.fillRect(18, 28, 24, 4);
-    g.fillStyle = '#efc09a';
-    g.beginPath();
-    g.arc(30, 22, 7, 0, Math.PI * 2);
-    g.fill();
-    contorno(g);
-    g.fillStyle = '#1a120c';
-    g.fillRect(22, 10, 16, 10);
-    g.fillStyle = equipo === 'patriota' ? '#e2b33a' : '#f4f4f4';
-    g.fillRect(22, 18, 16, 3);
-    g.strokeStyle = '#6b4428';
-    g.lineWidth = 3;
-    g.beginPath();
-    g.moveTo(40, 34);
-    g.lineTo(58, 30);
-    g.stroke();
-    g.strokeStyle = '#d9d9d9';
-    g.lineWidth = 2;
-    g.beginPath();
-    g.moveTo(36, 32);
-    g.lineTo(60, 28);
-    g.stroke();
-  });
-}
-
-function pintarLancero(equipo) {
-  return lienzoSprite(96, 64, (g) => {
-    g.fillStyle = 'rgba(0,0,0,0.22)';
-    g.beginPath();
-    g.ellipse(48, 56, 30, 6, 0, 0, Math.PI * 2);
-    g.fill();
-    g.strokeStyle = '#3a2a1c';
-    g.lineWidth = 3;
-    g.beginPath();
-    g.moveTo(30, 46);
-    g.lineTo(26, 58);
-    g.moveTo(42, 48);
-    g.lineTo(40, 58);
-    g.moveTo(62, 48);
-    g.lineTo(66, 58);
-    g.moveTo(74, 44);
-    g.lineTo(80, 58);
-    g.stroke();
-    g.fillStyle = equipo === 'patriota' ? '#8a5a32' : '#2c2a28';
-    g.beginPath();
-    g.ellipse(52, 42, 26, 12, 0, 0, Math.PI * 2);
-    g.fill();
-    contorno(g);
-    g.beginPath();
-    g.moveTo(72, 36);
-    g.quadraticCurveTo(90, 26, 92, 20);
-    g.quadraticCurveTo(78, 24, 70, 34);
-    g.closePath();
-    g.fill();
-    contorno(g);
-    g.fillStyle = equipo === 'patriota' ? '#1f4e89' : '#8d1f1f';
-    g.fillRect(40, 20, 16, 16);
-    contorno(g);
-    g.fillStyle = '#efc09a';
-    g.beginPath();
-    g.arc(48, 16, 6, 0, Math.PI * 2);
-    g.fill();
-    contorno(g);
-    g.fillStyle = equipo === 'patriota' ? '#e2b33a' : '#f4f4f4';
-    g.fillRect(42, 8, 14, 5);
-    if (equipo !== 'patriota') {
-      g.fillStyle = '#f4f4f4';
-      g.fillRect(52, 8, 3, 8);
-    }
-    g.strokeStyle = '#efe6d2';
-    g.lineWidth = 2;
-    g.beginPath();
-    g.moveTo(46, 22);
-    g.lineTo(94, 6);
-    g.stroke();
-    g.fillStyle = '#c0392b';
-    g.beginPath();
-    g.moveTo(94, 6);
-    g.lineTo(86, 10);
-    g.lineTo(90, 2);
-    g.fill();
-  });
-}
 
 function pintarArbol(oscuro, claro) {
   return lienzoSprite(64, 72, (g) => {
@@ -2368,14 +2237,6 @@ function generarTerreno() {
   g.lineWidth = 16;
   g.strokeRect(8, 8, c.width - 16, c.height - 16);
   terreno = c;
-}
-
-function claveSprite(u) {
-  if (u.tipo === 'aldeano') return u.equipo === 'patriota' ? 'aldeanoP' : 'aldeanoR';
-  if (u.tipo === 'fusilero') return 'fusileroP';
-  if (u.tipo === 'lancero') return 'lanceroP';
-  if (u.tipo === 'fusilero_realista') return 'fusileroR';
-  return 'dragonR';
 }
 
 function dibujarBandera(x, y, equipo) {
@@ -2549,34 +2410,31 @@ function dibujarNodo(n) {
 }
 
 function dibujarUnidad(u) {
-  if (!enVista(u.x, u.y, 40)) return;
+  if (!enVista(u.x, u.y, 70)) return;
   const seleccionado = partida.seleccion.indexOf(u.id) >= 0;
   ctx.fillStyle = u.equipo === 'patriota' ? 'rgba(31,78,137,0.28)' : 'rgba(156,43,43,0.28)';
   ctx.beginPath();
-  ctx.ellipse(u.x, u.y + 4, u.radio * 0.95, u.radio * 0.42, 0, 0, Math.PI * 2);
+  ctx.ellipse(u.x, u.y + 2, u.radio * 1.05, u.radio * 0.45, 0, 0, Math.PI * 2);
   ctx.fill();
   if (seleccionado) {
     const pulso = 1 + Math.sin(partida.tiempo * 6 + u.id) * 0.06;
     ctx.strokeStyle = u.equipo === 'patriota' ? '#ffe08a' : '#ffb4b4';
     ctx.lineWidth = 2 / cam.zoom;
     ctx.beginPath();
-    ctx.ellipse(u.x, u.y + 4, (u.radio + 4) * pulso, u.radio * 0.55, 0, 0, Math.PI * 2);
+    ctx.ellipse(u.x, u.y + 2, (u.radio + 5) * pulso, u.radio * 0.62, 0, 0, Math.PI * 2);
     ctx.stroke();
   }
-  const img = sprites[claveSprite(u)];
-  const bob = Math.sin(partida.tiempo * (u.tipo === 'lancero' || u.tipo === 'dragon' ? 11 : 7) + u.id) *
-    (u.estado === 'quieto' ? 0.5 : 1.3);
-  const ancho = u.radio * (u.tipo === 'lancero' || u.tipo === 'dragon' ? 3.5 : 2.75);
-  const alto = ancho * (img.height / img.width);
-  ctx.save();
-  ctx.translate(u.x, u.y + bob);
-  if (u.frente < 0) ctx.scale(-1, 1);
-  ctx.drawImage(img, -ancho / 2, -alto * 0.8, ancho, alto);
-  ctx.restore();
+  const img = imagenUnidad(u);
+  if (img && img.complete && img.naturalWidth) {
+    const tam = tamanoSprite(u);
+    const izquierda = u.x - tam * PIVOTE.x;
+    const arriba = u.y - tam * (1 - PIVOTE.desdeAbajo);
+    ctx.drawImage(img, izquierda, arriba, tam, tam);
+  }
   if (u.golpe > 0) {
-    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.beginPath();
-    ctx.arc(u.x, u.y - 4, u.radio * 0.7, 0, Math.PI * 2);
+    ctx.arc(u.x, u.y - 8, u.radio * 0.85, 0, Math.PI * 2);
     ctx.fill();
   }
 }
@@ -2707,7 +2565,8 @@ function dibujar() {
   }
   for (const u of orden) {
     if (u.hp < u.hpMax || partida.seleccion.indexOf(u.id) >= 0) {
-      dibujarBarra(u.x, u.y - u.radio - 16, Math.max(22, u.radio * 2), u.hp, u.hpMax);
+      const tam = tamanoSprite(u);
+      dibujarBarra(u.x, u.y - tam * (1 - PIVOTE.desdeAbajo) - 5, Math.max(26, u.radio * 2.2), u.hp, u.hpMax);
     }
   }
   for (const d of partida.disparos) {
@@ -2836,6 +2695,7 @@ function iniciar() {
   iniciado = true;
   if (!ctx || !mctx) throw new Error('No hay lienzo 2D');
   generarSprites();
+  cargarArteUnidades();
   generarTerreno();
   ajustarTamano();
   const params = new URLSearchParams(location.search);
