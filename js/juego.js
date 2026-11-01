@@ -329,11 +329,12 @@ function crearPartida(opciones) {
       madera: 220,
       oro: 80,
       oleada: 0,
-      oleadaEn: 175,
+      oleadaEn: 180,
       reintentoCuartel: 8,
       cuartelesLevantados: 0,
       avisoCuartel: false,
       entrenados: 0,
+      ataquePendiente: false,
     },
   };
   sembrarMundo();
@@ -827,8 +828,10 @@ function actualizarRecoleccion(u, dt) {
   u.frente = nodo.x >= u.x ? 1 : -1;
   u.temporizador -= dt;
   if (u.temporizador > 0) return;
-  u.temporizador = 0.85;
-  const toma = Math.min(4, u.cargaMax - u.carga, nodo.cantidad);
+  const ritmo = ritmoRecoleccion(nodo.tipo);
+  u.temporizador = ritmo.cada;
+  const tope = ritmo.carga;
+  const toma = Math.min(ritmo.toma, tope - u.carga, nodo.cantidad);
   if (toma <= 0) {
     u.estado = u.carga > 0 ? 'entregar' : 'quieto';
     return;
@@ -836,7 +839,13 @@ function actualizarRecoleccion(u, dt) {
   nodo.cantidad -= toma;
   u.carga += toma;
   u.cargaTipo = nodo.tipo;
-  if (u.carga >= u.cargaMax || nodo.cantidad <= 0) u.estado = 'entregar';
+  if (u.carga >= tope || nodo.cantidad <= 0) u.estado = 'entregar';
+}
+
+function ritmoRecoleccion(tipo) {
+  if (tipo === 'comida') return { cada: 1.35, toma: 2, carga: 6 };
+  if (tipo === 'madera') return { cada: 0.6, toma: 8, carga: 24 };
+  return { cada: 0.9, toma: 4, carga: 12 };
 }
 
 function actualizarEntrega(u, dt) {
@@ -1005,9 +1014,14 @@ function actualizarColas(dt) {
     b.producidos += 1;
     const p = puntoAparicion(b, b.producidos);
     const u = crearUnidad(item.tipo, b.equipo, p.x, p.y);
-    const lejos = puntoAparicion(b, b.producidos + 2);
-    u.estado = 'mover';
-    u.destino = lejos;
+    const tcRival = centroDe(oponente(b.equipo));
+    if (b.equipo === 'realista' && u.tipo !== 'aldeano' && partida.ia && partida.ia.ataquePendiente && tcRival) {
+      ordenarAsalto(u, tcRival);
+    } else {
+      const lejos = puntoAparicion(b, b.producidos + 2);
+      u.estado = 'mover';
+      u.destino = lejos;
+    }
   }
 }
 
@@ -1071,23 +1085,22 @@ function responderDefensa(amenaza) {
 function lanzarOleada() {
   const ia = partida.ia;
   const tc = centroDe('patriota');
-  const militares = [];
+  const disponibles = [];
   for (const u of partida.unidades) {
-    if (!u.muerto && u.equipo === 'realista' && u.tipo !== 'aldeano' && u.estado !== 'asalto') militares.push(u);
+    if (u.muerto || u.equipo !== 'realista' || u.tipo === 'aldeano' || u.estado === 'asalto') continue;
+    disponibles.push(u);
   }
-  const inf = militares.filter((u) => u.tipo === 'fusilero_realista');
-  const cab = militares.filter((u) => u.tipo === 'dragon');
   ia.oleada += 1;
   const plan = planOleada(ia.oleada);
-  const enviar = inf.slice(0, plan.inf).concat(cab.slice(0, plan.cab));
+  const enviar = disponibles.slice();
+  ia.oleadaEn = plan.espera;
   if (!tc || !enviar.length) {
-    ia.oleada -= 1;
-    ia.oleadaEn = 6;
+    ia.ataquePendiente = true;
     return;
   }
+  ia.ataquePendiente = false;
   for (const u of enviar) ordenarAsalto(u, tc);
   aviso(ia.oleada === 1 ? 'Se acerca una avanzada realista.' : 'Otra oleada realista marcha hacia tu centro.');
-  ia.oleadaEn = plan.espera;
 }
 
 function entrenarIA(cuartel) {
@@ -1481,11 +1494,26 @@ function entrenar(edificio, tipo, silencioso) {
 }
 
 function entrenarVarios(edificio, tipo, cantidad) {
-  let hecho = false;
-  for (let i = 0; i < cantidad; i++) {
-    if (!entrenar(edificio, tipo, hecho)) break;
-    hecho = true;
+  if (!edificio || edificio.muerto) return;
+  if (!edificio.completo) {
+    aviso('El edificio aún se está construyendo.');
+    return;
   }
+  let hechos = 0;
+  let motivo = '';
+  const costo = COSTO[tipo];
+  for (let i = 0; i < cantidad; i++) {
+    if (entrenar(edificio, tipo, true)) {
+      hechos += 1;
+      continue;
+    }
+    if (!costo) break;
+    if (edificio.cola.length >= 5) motivo = 'La cola de entrenamiento está llena.';
+    else if (calcularPoblacion() + costo.poblacion > partida.tope) motivo = 'Población al límite.';
+    else motivo = faltaRecurso(costo) || 'Falta oro';
+    break;
+  }
+  if (hechos < cantidad && motivo) aviso(motivo);
 }
 
 function esMilitar(u) {
@@ -1880,6 +1908,12 @@ function registrarEntrada() {
   });
   minimapa.addEventListener('pointerup', () => { miniActivo = false; });
   minimapa.addEventListener('pointercancel', () => { miniActivo = false; });
+  const quitarFoco = () => {
+    const activo = document.activeElement;
+    if (activo && activo.tagName === 'BUTTON' && typeof activo.blur === 'function') activo.blur();
+  };
+  escenario.addEventListener('pointerup', quitarFoco);
+  escenario.addEventListener('click', quitarFoco);
   document.getElementById('btn-ejercito').addEventListener('click', seleccionarEjercito);
   document.getElementById('btn-cerrar-pista').addEventListener('click', () => {
     document.getElementById('pista').classList.add('oculta');
@@ -2328,9 +2362,6 @@ function generarTerreno() {
     const w = 54 * escala;
     g.drawImage(img, x - w / 2, y - w * 0.82, w, w);
   }
-  g.strokeStyle = '#31401f';
-  g.lineWidth = 16;
-  g.strokeRect(8, 8, c.width - 16, c.height - 16);
   terreno = c;
 }
 
@@ -2596,7 +2627,7 @@ function dibujarMinimapa() {
 
 function dibujar() {
   ctx.setTransform(vista.dpr, 0, 0, vista.dpr, 0, 0);
-  ctx.fillStyle = '#12180e';
+  ctx.fillStyle = '#7d9a48';
   ctx.fillRect(0, 0, vista.w, vista.h);
   ctx.save();
   ctx.translate(vista.w / 2, vista.h / 2);
