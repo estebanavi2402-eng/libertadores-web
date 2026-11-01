@@ -6,10 +6,9 @@
    window.__LIBERTAD expone el estado para pruebas. */
 
 const MUNDO = { w: 2200, h: 1400 };
-const ZOOM_MIN = 0.55;
 const ZOOM_MAX = 1.75;
 const TOPE_POBLACION = 40;
-const TIEMPO_OBRA = 11;
+const TIEMPO_OBRA = 14;
 const MARGEN_BORDE_TACTIL = 28;
 const MARGEN_BORDE_RATON = 24;
 
@@ -19,12 +18,12 @@ const CAMP = {
 };
 
 const EDIF = {
-  centro: { hp: 760, ancho: 116, alto: 104 },
-  cuartel: { hp: 440, ancho: 132, alto: 86 },
+  centro: { hp: 860, ancho: 116, alto: 104 },
+  cuartel: { hp: 540, ancho: 132, alto: 86 },
 };
 
 const STAT = {
-  aldeano: { hp: 40, velocidad: 96, dano: 2, alcance: 14, cadencia: 1.05, radio: 11, poblacion: 1, aggro: 0, carga: 24 },
+  aldeano: { hp: 40, velocidad: 96, dano: 2, alcance: 14, cadencia: 1.05, radio: 11, poblacion: 1, aggro: 0, carga: 12 },
   fusilero: { hp: 74, velocidad: 72, dano: 11, alcance: 136, cadencia: 0.95, radio: 12, poblacion: 1, aggro: 200 },
   lancero: { hp: 88, velocidad: 136, dano: 14, alcance: 22, cadencia: 0.8, radio: 15, poblacion: 2, aggro: 120 },
   fusilero_realista: { hp: 58, velocidad: 68, dano: 8, alcance: 122, cadencia: 1.05, radio: 12, poblacion: 1, aggro: 180 },
@@ -32,12 +31,12 @@ const STAT = {
 };
 
 const COSTO = {
-  aldeano: { comida: 50, madera: 0, oro: 0, tiempo: 6, poblacion: 1 },
-  cuartel: { comida: 0, madera: 100, oro: 0, tiempo: TIEMPO_OBRA },
-  fusilero: { comida: 45, madera: 10, oro: 15, tiempo: 6, poblacion: 1 },
-  lancero: { comida: 60, madera: 10, oro: 35, tiempo: 8, poblacion: 2 },
-  fusilero_realista: { comida: 45, madera: 0, oro: 15, tiempo: 7, poblacion: 1 },
-  dragon: { comida: 60, madera: 0, oro: 30, tiempo: 9, poblacion: 2 },
+  aldeano: { comida: 70, madera: 0, oro: 0, tiempo: 8, poblacion: 1 },
+  cuartel: { comida: 0, madera: 160, oro: 0, tiempo: TIEMPO_OBRA },
+  fusilero: { comida: 60, madera: 35, oro: 45, tiempo: 9, poblacion: 1 },
+  lancero: { comida: 70, madera: 25, oro: 70, tiempo: 12, poblacion: 2 },
+  fusilero_realista: { comida: 60, madera: 0, oro: 40, tiempo: 8, poblacion: 1 },
+  dragon: { comida: 70, madera: 0, oro: 65, tiempo: 11, poblacion: 2 },
 };
 
 const NODOS = [
@@ -81,7 +80,7 @@ const elComida = document.getElementById('val-comida');
 const elMadera = document.getElementById('val-madera');
 const elOro = document.getElementById('val-oro');
 const elPoblacion = document.getElementById('val-poblacion');
-const elPista = document.getElementById('pista');
+const elPista = document.getElementById('pista-texto');
 const elComandos = document.getElementById('comandos');
 const elFichaNombre = document.getElementById('ficha-nombre');
 const elFichaDetalle = document.getElementById('ficha-detalle');
@@ -152,15 +151,21 @@ function pantallaAMundo(x, y) {
   };
 }
 
+function zoomMinimo() {
+  if (!vista.w || !vista.h) return 0.7;
+  return Math.min(ZOOM_MAX, Math.max(vista.w / MUNDO.w, vista.h / MUNDO.h));
+}
+
 function clampCamara() {
+  const minimo = zoomMinimo();
+  if (cam.zoom < minimo) cam.zoom = minimo;
+  if (cam.zoom > ZOOM_MAX) cam.zoom = ZOOM_MAX;
   const mitadW = vista.w / (2 * cam.zoom);
   const mitadH = vista.h / (2 * cam.zoom);
-  const mx = 48 / cam.zoom;
-  const my = 48 / cam.zoom;
-  if (mitadW * 2 >= MUNDO.w + mx * 2) cam.x = MUNDO.w / 2;
-  else cam.x = clamp(cam.x, mitadW - mx, MUNDO.w - mitadW + mx);
-  if (mitadH * 2 >= MUNDO.h + my * 2) cam.y = MUNDO.h / 2;
-  else cam.y = clamp(cam.y, mitadH - my, MUNDO.h - mitadH + my);
+  if (mitadW * 2 >= MUNDO.w - 1) cam.x = MUNDO.w / 2;
+  else cam.x = clamp(cam.x, mitadW, MUNDO.w - mitadW);
+  if (mitadH * 2 >= MUNDO.h - 1) cam.y = MUNDO.h / 2;
+  else cam.y = clamp(cam.y, mitadH, MUNDO.h - mitadH);
 }
 
 function enfoque(x, y, zoom) {
@@ -256,10 +261,6 @@ function crearEdificio(tipo, equipo, x, y, completo) {
     golpe: 0,
     muerto: false,
   };
-  if (equipo === 'realista' && tipo === 'centro') {
-    b.hpMax = 420;
-    b.hp = 420;
-  }
   partida.edificios.push(b);
   return b;
 }
@@ -308,9 +309,9 @@ function crearPartida(opciones) {
     auto: false,
     autoReloj: 0,
     autoAlternar: false,
-    comida: 260,
-    madera: 60,
-    oro: 50,
+    comida: 190,
+    madera: 100,
+    oro: 80,
     tope: TOPE_POBLACION,
     modo: 'normal',
     constructores: [],
@@ -325,10 +326,10 @@ function crearPartida(opciones) {
     escombros: [],
     ia: {
       comida: 110,
-      madera: 140,
-      oro: 60,
+      madera: 220,
+      oro: 80,
       oleada: 0,
-      oleadaEn: 140,
+      oleadaEn: 175,
       reintentoCuartel: 8,
       cuartelesLevantados: 0,
       avisoCuartel: false,
@@ -721,6 +722,9 @@ function morir(ent) {
         if (partida.fase === 'jugando') aviso('El cuartel fue destruido. Recuperas la mitad de la madera.');
       }
     }
+    if (ent.equipo === 'realista' && ent.tipo === 'cuartel' && partida.ia) {
+      partida.ia.reintentoCuartel = 20;
+    }
     ent.cola = [];
     partida.escombros.push({
       x: ent.x,
@@ -823,8 +827,8 @@ function actualizarRecoleccion(u, dt) {
   u.frente = nodo.x >= u.x ? 1 : -1;
   u.temporizador -= dt;
   if (u.temporizador > 0) return;
-  u.temporizador = 0.55;
-  const toma = Math.min(12, u.cargaMax - u.carga, nodo.cantidad);
+  u.temporizador = 0.85;
+  const toma = Math.min(4, u.cargaMax - u.carga, nodo.cantidad);
   if (toma <= 0) {
     u.estado = u.carga > 0 ? 'entregar' : 'quieto';
     return;
@@ -1009,15 +1013,59 @@ function actualizarColas(dt) {
 
 function planOleada(n) {
   return {
-    inf: Math.min(6, 1 + n),
-    cab: n >= 2 ? Math.min(3, n - 1) : 0,
-    espera: Math.max(24, 48 - n * 4),
+    inf: Math.min(8, 1 + n),
+    cab: n < 2 ? 1 : Math.min(4, n),
+    espera: Math.max(32, 50 - n * 4),
   };
 }
 
 function buscarSitioRealista() {
   for (const s of SITIOS_REALISTAS) if (posicionValida(s.x, s.y)) return s;
   return null;
+}
+
+function anclasRealistas() {
+  const lista = [];
+  for (const b of partida.edificios) {
+    if (!b.muerto && b.equipo === 'realista' && (b.tipo === 'centro' || b.tipo === 'cuartel')) lista.push(b);
+  }
+  return lista;
+}
+
+function amenazaCercaDeRealistas() {
+  const anclas = anclasRealistas();
+  if (!anclas.length) return null;
+  let mejor = null;
+  let mejorD = 460;
+  for (const u of partida.unidades) {
+    if (u.muerto || u.equipo !== 'patriota' || u.tipo === 'aldeano') continue;
+    for (const ancla of anclas) {
+      const d = Math.hypot(u.x - ancla.x, u.y - ancla.y);
+      if (d < mejorD) {
+        mejorD = d;
+        mejor = u;
+      }
+    }
+  }
+  return mejor;
+}
+
+function responderDefensa(amenaza) {
+  const anclas = anclasRealistas();
+  for (const u of partida.unidades) {
+    if (u.muerto || u.equipo !== 'realista' || u.tipo === 'aldeano') continue;
+    if (u.estado === 'asalto') {
+      let cerca = false;
+      for (const ancla of anclas) {
+        if (Math.hypot(u.x - ancla.x, u.y - ancla.y) < 540) cerca = true;
+      }
+      if (!cerca) continue;
+    } else if (u.estado !== 'quieto' && u.estado !== 'mover' && u.estado !== 'atacar') continue;
+    u.estado = 'atacar';
+    u.objetivoId = amenaza.id;
+    u.asaltoId = null;
+    u.destino = null;
+  }
 }
 
 function lanzarOleada() {
@@ -1045,8 +1093,8 @@ function lanzarOleada() {
 function entrenarIA(cuartel) {
   if (!cuartel || !cuartel.completo || cuartel.muerto) return;
   const ia = partida.ia;
-  if (cuartel.cola.length >= 2) return;
-  if (contarMilitares('realista') + cuartel.cola.length >= 5) return;
+  if (cuartel.cola.length >= 3) return;
+  if (contarMilitares('realista') + cuartel.cola.length >= 12) return;
   const tipo = ia.entrenados % 3 === 2 ? 'dragon' : 'fusilero_realista';
   const costo = COSTO[tipo];
   if (ia.comida < costo.comida || ia.oro < costo.oro) return;
@@ -1059,16 +1107,18 @@ function entrenarIA(cuartel) {
 function actualizarIA(dt) {
   if (partida.demo) return;
   const ia = partida.ia;
-  ia.comida += 4.2 * dt;
-  ia.madera += 1.6 * dt;
-  ia.oro += 1.5 * dt;
+  ia.comida += 7 * dt;
+  ia.madera += 3.2 * dt;
+  ia.oro += 4.2 * dt;
+  const intruso = amenazaCercaDeRealistas();
+  if (intruso) responderDefensa(intruso);
   ia.reintentoCuartel -= dt;
   ia.oleadaEn -= dt;
   let cuartel = null;
   for (const b of partida.edificios) {
     if (!b.muerto && b.tipo === 'cuartel' && b.equipo === 'realista') cuartel = b;
   }
-  if (!cuartel && ia.cuartelesLevantados < 1 && ia.reintentoCuartel <= 0 && ia.madera >= COSTO.cuartel.madera) {
+  if (!cuartel && ia.cuartelesLevantados < 3 && ia.reintentoCuartel <= 0 && ia.madera >= COSTO.cuartel.madera) {
     const sitio = buscarSitioRealista();
     if (sitio) {
       ia.madera -= COSTO.cuartel.madera;
@@ -1121,7 +1171,7 @@ function actualizarAuto(dt) {
   for (const b of partida.edificios) {
     if (!b.muerto && b.equipo === 'patriota' && b.tipo === 'cuartel') cuartel = b;
   }
-  const trabajos = ['oro', 'madera', 'comida', 'comida'];
+  const trabajos = ['oro', 'oro', 'madera', 'comida'];
   for (const a of aldeanos) {
     if (a.estado === 'construir') continue;
     const tipo = cuartel ? trabajos[aldeanos.indexOf(a) % 4] : 'madera';
@@ -1169,7 +1219,7 @@ function actualizarAuto(dt) {
   const centroEnemigo = centroDe('realista');
   if (!centroEnemigo && !cuartelEnemigo) return;
   if (!partida.autoAsalto) {
-    if (ociosos.length < 8) return;
+    if (ociosos.length < 6) return;
     partida.autoAsalto = true;
     const pares = militares.filter((_, i) => i % 2 === 0);
     const impares = militares.filter((_, i) => i % 2 === 1);
@@ -1331,7 +1381,7 @@ function posicionValida(x, y) {
 function intentarColocar(x, y) {
   if (partida.fase !== 'jugando') return;
   if (!puedePagar(COSTO.cuartel)) {
-    aviso('Madera insuficiente.');
+    aviso(faltaRecurso(COSTO.cuartel) || 'Falta madera');
     return;
   }
   if (!posicionValida(x, y)) {
@@ -1368,9 +1418,20 @@ function intentarColocar(x, y) {
   aviso('Los aldeanos están levantando el cuartel.');
 }
 
+function faltaRecurso(costo) {
+  const faltan = [];
+  if ((costo.comida || 0) > partida.comida) faltan.push('comida');
+  if ((costo.madera || 0) > partida.madera) faltan.push('madera');
+  if ((costo.oro || 0) > partida.oro) faltan.push('oro');
+  if (!faltan.length) return '';
+  if (faltan.length === 1) return 'Falta ' + faltan[0];
+  if (faltan.length === 2) return 'Falta ' + faltan[0] + ' y ' + faltan[1];
+  return 'Falta ' + faltan.slice(0, -1).join(', ') + ' y ' + faltan[faltan.length - 1];
+}
+
 function empezarColocacion() {
   if (!puedePagar(COSTO.cuartel)) {
-    aviso('Madera insuficiente.');
+    aviso(faltaRecurso(COSTO.cuartel) || 'Falta madera');
     return;
   }
   const aldeanos = [];
@@ -1395,40 +1456,61 @@ function cancelarColocacion() {
   partida.constructores = [];
 }
 
-function entrenar(edificio, tipo) {
-  if (partida.fase !== 'jugando' || !edificio || edificio.muerto) return;
+function entrenar(edificio, tipo, silencioso) {
+  if (partida.fase !== 'jugando' || !edificio || edificio.muerto) return false;
   if (!edificio.completo) {
-    aviso('El edificio aún se está construyendo.');
-    return;
+    if (!silencioso) aviso('El edificio aún se está construyendo.');
+    return false;
   }
   if (edificio.cola.length >= 5) {
-    aviso('La cola de entrenamiento está llena.');
-    return;
+    if (!silencioso) aviso('La cola de entrenamiento está llena.');
+    return false;
   }
   const costo = COSTO[tipo];
-  if (!costo) return;
+  if (!costo) return false;
   if (calcularPoblacion() + costo.poblacion > partida.tope) {
-    aviso('Población al límite.');
-    return;
+    if (!silencioso) aviso('Población al límite.');
+    return false;
   }
   if (!pagar(costo)) {
-    aviso('Recursos insuficientes.');
-    return;
+    if (!silencioso) aviso(faltaRecurso(costo) || 'Falta oro');
+    return false;
   }
   edificio.cola.push({ tipo, restante: costo.tiempo, total: costo.tiempo });
+  return true;
 }
 
-function seleccionarTodos() {
+function entrenarVarios(edificio, tipo, cantidad) {
+  let hecho = false;
+  for (let i = 0; i < cantidad; i++) {
+    if (!entrenar(edificio, tipo, hecho)) break;
+    hecho = true;
+  }
+}
+
+function esMilitar(u) {
+  return u && u.esUnidad && u.equipo === 'patriota' && u.tipo !== 'aldeano' && !u.muerto;
+}
+
+function seleccionarEjercito() {
+  const ids = [];
+  for (const u of partida.unidades) if (esMilitar(u)) ids.push(u.id);
+  partida.seleccion = ids;
+  if (partida.modo === 'colocar') partida.modo = 'normal';
+  if (!ids.length) aviso('No hay tropas. Entrena en el cuartel.');
+}
+
+function seleccionarOciosos() {
   const ids = [];
   for (const u of partida.unidades) {
-    if (!u.muerto && u.equipo === 'patriota') ids.push(u.id);
+    if (!u.muerto && u.equipo === 'patriota' && u.tipo === 'aldeano' && u.estado === 'quieto') ids.push(u.id);
   }
   if (!ids.length) {
-    aviso('No tienes unidades.');
+    aviso('No hay aldeanos ociosos.');
     return;
   }
   partida.seleccion = ids;
-  partida.modo = partida.modo === 'colocar' ? 'normal' : partida.modo;
+  if (partida.modo === 'colocar') partida.modo = 'normal';
 }
 
 function reiniciar() {
@@ -1615,7 +1697,7 @@ function sobreControl(x, y) {
 
 function zoomHacia(factor, sx, sy) {
   const antes = pantallaAMundo(sx, sy);
-  cam.zoom = clamp(cam.zoom * factor, ZOOM_MIN, ZOOM_MAX);
+  cam.zoom = clamp(cam.zoom * factor, zoomMinimo(), ZOOM_MAX);
   cam.x = antes.x - (sx - vista.w / 2) / cam.zoom;
   cam.y = antes.y - (sy - vista.h / 2) / cam.zoom;
   clampCamara();
@@ -1679,7 +1761,7 @@ function alMover(e) {
     const mx = (a.x + b.x) / 2;
     const my = (a.y + b.y) / 2;
     const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
-    cam.zoom = clamp(gesto.zoom0 * (dist / gesto.dist0), ZOOM_MIN, ZOOM_MAX);
+    cam.zoom = clamp(gesto.zoom0 * (dist / gesto.dist0), zoomMinimo(), ZOOM_MAX);
     cam.x = gesto.wx - (mx - vista.w / 2) / cam.zoom;
     cam.y = gesto.wy - (my - vista.h / 2) / cam.zoom;
     clampCamara();
@@ -1734,10 +1816,20 @@ function alRueda(e) {
 }
 
 function alTeclaBajar(e) {
-  if (e.target && e.target.closest && e.target.closest('input, textarea')) return;
+  if (e.target && e.target.closest && e.target.closest('input, textarea, button')) {
+    if (e.key !== 'Escape') return;
+  }
   if (teclaCamara(e.key)) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     e.preventDefault();
+  }
+  if (!e.repeat && (e.key === 'q' || e.key === 'Q' || e.key === ',')) {
+    e.preventDefault();
+    seleccionarEjercito();
+  }
+  if (!e.repeat && e.key === '.') {
+    e.preventDefault();
+    seleccionarOciosos();
   }
   if (e.key === 'Escape') cancelarColocacion();
   teclas.add(e.key);
@@ -1788,7 +1880,10 @@ function registrarEntrada() {
   });
   minimapa.addEventListener('pointerup', () => { miniActivo = false; });
   minimapa.addEventListener('pointercancel', () => { miniActivo = false; });
-  document.getElementById('btn-todos').addEventListener('click', seleccionarTodos);
+  document.getElementById('btn-ejercito').addEventListener('click', seleccionarEjercito);
+  document.getElementById('btn-cerrar-pista').addEventListener('click', () => {
+    document.getElementById('pista').classList.add('oculta');
+  });
   document.getElementById('btn-reiniciar').addEventListener('click', reiniciar);
   document.getElementById('btn-de-nuevo').addEventListener('click', reiniciar);
   document.getElementById('btn-seguir').addEventListener('click', () => {
@@ -1801,7 +1896,7 @@ function registrarEntrada() {
     else if (btn.dataset.accion === 'cuartel') empezarColocacion();
     else if (btn.dataset.accion === 'entrenar') {
       const ed = edificioPropioUnico(seleccionEntidades());
-      if (ed) entrenar(ed, btn.dataset.tipo);
+      if (ed) entrenarVarios(ed, btn.dataset.tipo, e.shiftKey ? 5 : 1);
     }
   });
 }
@@ -1903,7 +1998,7 @@ function renderComandos() {
     const clase = puedePagar(COSTO.cuartel) ? '' : 'insuficiente';
     html = '<button type="button" data-accion="cuartel" class="' + clase + '">' +
       '<span class="btn-titulo">Construir cuartel</span>' +
-      '<span class="btn-costo">100 madera</span></button>';
+      '<span class="btn-costo">' + textoCosto(COSTO.cuartel) + '</span></button>';
   }
   if (ed && ed.completo && ed.cola.length) {
     html += '<div class="cola"><span class="cola-texto"></span><div class="progreso"><span></span></div></div>';
@@ -1977,7 +2072,7 @@ function textoPista() {
   if (aldeano) return 'Clic derecho: recolectar, atacar o volver al centro. En el teléfono, toca el recurso.';
   if (soldado) return 'Clic derecho: mover o atacar. En el teléfono, toca el terreno o el enemigo.';
   if (edificio) return 'Entrena unidades. Salen frente al edificio.';
-  return 'Clic izquierdo selecciona. Arrastra un recuadro. Mayús suma. WASD, flechas o el borde mueven la vista.';
+  return 'Clic izquierdo selecciona. Mayús suma. Coma o Q: ejército. Punto: aldeanos ociosos.';
 }
 
 function aviso(texto) {
@@ -2690,25 +2785,34 @@ function resumenPublico() {
   };
 }
 
+function ocultarCarga() {
+  const capa = document.getElementById('cargando');
+  if (capa) capa.classList.add('oculto');
+}
+
 function iniciar() {
   if (iniciado) return;
   iniciado = true;
   if (!ctx || !mctx) throw new Error('No hay lienzo 2D');
-  generarSprites();
-  cargarArteUnidades();
-  generarTerreno();
-  ajustarTamano();
-  const params = new URLSearchParams(location.search);
-  crearPartida({
-    demo: params.has('victoria'),
-    auto: params.has('auto') && !params.has('victoria'),
-  });
-  registrarEntrada();
-  window.addEventListener('resize', ajustarTamano);
-  if (window.visualViewport) window.visualViewport.addEventListener('resize', ajustarTamano);
-  document.addEventListener('visibilitychange', () => { ultimo = performance.now(); });
-  ultimo = performance.now();
-  requestAnimationFrame(bucle);
+  const arranque = () => {
+    generarSprites();
+    cargarArteUnidades();
+    generarTerreno();
+    ajustarTamano();
+    const params = new URLSearchParams(location.search);
+    crearPartida({
+      demo: params.has('victoria'),
+      auto: params.has('auto') && !params.has('victoria'),
+    });
+    registrarEntrada();
+    window.addEventListener('resize', ajustarTamano);
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', ajustarTamano);
+    document.addEventListener('visibilitychange', () => { ultimo = performance.now(); });
+    ultimo = performance.now();
+    ocultarCarga();
+    requestAnimationFrame(bucle);
+  };
+  requestAnimationFrame(() => requestAnimationFrame(arranque));
 }
 
 window.__LIBERTAD = {
