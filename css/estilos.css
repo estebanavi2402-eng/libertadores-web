@@ -15,8 +15,12 @@
 
 html, body {
   margin: 0;
+  width: 100%;
   height: 100%;
   overflow: hidden;
+  overscroll-behavior: none;
+  position: fixed;
+  inset: 0;
   background: var(--tinta);
   touch-action: none;
   user-select: none;
@@ -154,7 +158,14 @@ button.ociosos.vacio { opacity: 0.55; }
   gap: 10px;
 }
 
-#pista-texto { margin: 0; flex: 1; }
+#pista-cuerpo { flex: 1; min-width: 0; }
+#pista-texto { margin: 0; }
+#pista-aviso {
+  margin: 0 0 6px;
+  font-weight: 700;
+  color: #ffe08a;
+}
+#pista-aviso[hidden] { display: none !important; }
 
 #pista.oculta { display: none; }
 
@@ -203,10 +214,11 @@ button.cerrar {
 #barra-inferior {
   bottom: 0;
   align-items: flex-end;
+  max-width: 100%;
   padding-top: 4px;
   padding-bottom: max(6px, env(safe-area-inset-bottom));
   background: linear-gradient(180deg, rgba(22, 14, 8, 0), rgba(22, 14, 8, 0.9) 10px, rgba(22, 14, 8, 0.94));
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 #grupo-sistema {
@@ -220,7 +232,12 @@ button.cerrar {
   grid-template-columns: repeat(auto-fill, 158px);
   gap: 6px;
   align-content: start;
-  height: 86px;
+  flex: 1 1 480px;
+  min-width: 0;
+  height: auto;
+  min-height: 86px;
+  max-height: 132px;
+  overflow: hidden;
 }
 
 #comandos button {
@@ -361,6 +378,42 @@ button:disabled {
 #aviso.visible {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+
+#depuracion {
+  display: none;
+  position: absolute;
+  z-index: 6;
+  top: 52px;
+  right: max(12px, env(safe-area-inset-right));
+  width: 176px;
+  padding: 8px;
+  gap: 6px;
+  flex-direction: column;
+  background: rgba(12, 8, 4, 0.94);
+  border: 2px solid #f0c14a;
+  border-radius: 10px;
+  color: #fff6df;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+
+body.depurando #depuracion { display: flex; }
+#depuracion[hidden] { display: none !important; }
+
+#depuracion p {
+  margin: 0 0 2px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #ffe08a;
+}
+
+#depuracion button {
+  min-height: 34px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 #dificultad {
