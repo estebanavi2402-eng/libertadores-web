@@ -54,8 +54,18 @@
     </header>
 
     <div id="pista">
-      <p id="pista-texto">Tus aldeanos esperan orden.</p>
+      <div id="pista-cuerpo">
+        <p id="pista-aviso" hidden></p>
+        <p id="pista-texto">Tus aldeanos esperan orden.</p>
+      </div>
       <button type="button" id="btn-cerrar-pista" class="cerrar">Cerrar</button>
+    </div>
+    <div id="depuracion" hidden>
+      <p>Depuración</p>
+      <button type="button" data-debug="danar" title="Deja el edificio seleccionado a la mitad de vida">Dañar al 50%</button>
+      <button type="button" data-debug="aldeano" title="Mata un aldeano patriota">Matar aldeano</button>
+      <button type="button" data-debug="poblacion" title="Crea tropas hasta el tope de población">Llenar población</button>
+      <button type="button" data-debug="recursos" title="Suma 500 de comida, madera y oro">+500 recursos</button>
     </div>
     <canvas id="minimapa" width="132" height="84" aria-label="Minimapa. Toca para mover la vista."></canvas>
 
