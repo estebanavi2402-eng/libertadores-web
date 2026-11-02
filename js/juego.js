@@ -62,8 +62,9 @@ const NODOS = [
   ['madera', 'bosque', 210, 760, 1500, 54],
   ['madera', 'bosque', 560, 680, 1700, 58],
   ['madera', 'bosque', 740, 620, 1500, 52],
-  ['oro', 'mina', 900, 1080, 720, 30],
-  ['oro', 'mina', 1080, 920, 1100, 36],
+  ['oro', 'mina', 900, 1080, 1800, 30],
+  ['oro', 'mina', 1080, 920, 2200, 36],
+  ['oro', 'mina', 1240, 1160, 1600, 28],
   ['comida', 'arbusto', 1660, 230, 340, 26],
   ['comida', 'huerta', 1980, 340, 460, 34],
   ['comida', 'arbusto', 1560, 420, 280, 24],
@@ -186,7 +187,8 @@ function clampCamara() {
   if (mitadW * 2 >= MUNDO.w - 1) cam.x = MUNDO.w / 2;
   else cam.x = clamp(cam.x, mitadW, MUNDO.w - mitadW);
   const barra = document.getElementById('barra-inferior');
-  const extraSur = (barra ? Math.max(88, barra.getBoundingClientRect().height) : 100) / cam.zoom;
+  const altoBarra = barra ? barra.getBoundingClientRect().height : 120;
+  const extraSur = Math.max(110, altoBarra) / cam.zoom + 40;
   if (mitadH * 2 >= MUNDO.h - 1) cam.y = MUNDO.h / 2 + extraSur * 0.35;
   else cam.y = clamp(cam.y, mitadH, MUNDO.h - mitadH + extraSur);
 }
@@ -376,7 +378,8 @@ function crearPartida(opciones) {
       madera: 260,
       oro: 90,
       oleada: 0,
-      oleadaEn: 300,
+      oleadaEn: dificultad === 'facil' ? 420 : 300,
+      incursionEn: dificultad === 'dificil' ? 240 : 0,
       olaInf: 0,
       olaCab: 0,
       reintentoCuartel: 8,
@@ -571,12 +574,18 @@ function bloqueado(x, y, u) {
   return false;
 }
 
+function velocidadMarcha(u) {
+  if (u.velGrupo > 0) return u.velGrupo;
+  return u.velocidad;
+}
+
 function moverHacia(u, tx, ty, dt) {
   // Pasos cortos: un dt grande no atraviesa edificios. Si un muro tapa
-  // el camino, el aldeano se corre de lado y lo bordea.
+  // el camino, el aldeano se corre de lado y lo bordea. La marcha en grupo
+  // no recupera la velocidad propia después de un rodeo.
   const xAntes = u.x;
   const yAntes = u.y;
-  const vel = u.estado === 'mover' && u.velGrupo ? u.velGrupo : u.velocidad;
+  const vel = velocidadMarcha(u);
   let restante = vel * dt;
   let guard = 0;
   while (restante > 0.2 && guard < 64) {
@@ -596,43 +605,40 @@ function moverHacia(u, tx, ty, dt) {
       else {
         let colocado = false;
         const signoBase = u.id % 2 === 0 ? 1 : -1;
-        for (const distLado of [14, 26, 40]) {
-          for (const signo of [signoBase, -signoBase]) {
-            const sx = u.x - uy * distLado * signo;
-            const sy = u.y + ux * distLado * signo;
-            if (!bloqueado(sx, sy, u)) {
-              nx = sx;
-              ny = sy;
-              colocado = true;
-              break;
-            }
+        const distLado = Math.min(8, Math.max(4, restante));
+        for (const signo of [signoBase, -signoBase]) {
+          const sx = u.x - uy * distLado * signo;
+          const sy = u.y + ux * distLado * signo;
+          if (!bloqueado(sx, sy, u)) {
+            nx = sx;
+            ny = sy;
+            colocado = true;
+            break;
           }
-          if (colocado) break;
         }
         if (!colocado) break;
       }
     }
     if (Math.abs(nx - u.x) < 0.04 && Math.abs(ny - u.y) < 0.04) break;
     if (nx !== u.x) u.frente = nx >= u.x ? 1 : -1;
+    const avanzado = Math.hypot(nx - u.x, ny - u.y);
     u.x = nx;
     u.y = ny;
-    restante -= paso;
+    restante -= Math.max(paso, avanzado);
   }
   if (Math.hypot(u.x - xAntes, u.y - yAntes) < 0.8 && Math.hypot(tx - u.x, ty - u.y) > 24) {
     u.atasco = (u.atasco || 0) + dt;
-    if (u.atasco > 0.35) {
+    if (u.atasco > 0.45) {
       const base = Math.atan2(ty - u.y, tx - u.x);
       const giro = (u.id % 2 === 0 ? 1 : -1) * (Math.PI / 2);
-      for (const dist of [22, 38, 56]) {
-        const px = u.x + Math.cos(base + giro) * dist;
-        const py = u.y + Math.sin(base + giro) * dist;
-        if (!bloqueado(px, py, u)) {
-          u.x = px;
-          u.y = py;
-          u.frente = px >= xAntes ? 1 : -1;
-          u.atasco = 0;
-          break;
-        }
+      const dist = Math.min(10, Math.max(6, vel * dt));
+      const px = u.x + Math.cos(base + giro) * dist;
+      const py = u.y + Math.sin(base + giro) * dist;
+      if (!bloqueado(px, py, u)) {
+        u.x = px;
+        u.y = py;
+        u.frente = px >= xAntes ? 1 : -1;
+        u.atasco = 0;
       }
     }
   } else u.atasco = 0;
@@ -744,12 +750,15 @@ function ordenarRecoleccion(lista, nodo) {
 }
 
 function ordenarAtaque(lista, objetivo) {
+  let lenta = Infinity;
+  for (const u of lista) lenta = Math.min(lenta, u.velocidad);
   for (const u of lista) {
     u.estado = 'atacar';
     u.objetivoId = objetivo.id;
     u.asaltoId = null;
     u.destino = null;
     u.nodoId = null;
+    u.velGrupo = lista.length > 1 ? lenta : 0;
   }
 }
 
@@ -850,7 +859,7 @@ function infligir(atacante, objetivo) {
   if (!objetivo || objetivo.muerto || objetivo.hp <= 0) return;
   let dano = atacante.dano;
   if (atacante.tipo === 'lancero' && objetivo.tipo === 'dragon') dano += 14;
-  if (atacante.equipo === 'realista' && objetivo.esEdificio) dano = Math.max(1, Math.round(dano * 0.4));
+  if (atacante.equipo === 'realista' && objetivo.esEdificio) dano = Math.max(1, Math.round(dano * 0.42));
   objetivo.hp -= dano;
   objetivo.golpe = 0.12;
   textoFlotante(objetivo.x, objetivo.y - (objetivo.radio || 24) - 8, '-' + dano, 'dano');
@@ -918,6 +927,58 @@ function esGranja(ent) {
   return !!(ent && ent.esEdificio && ent.tipo === 'granja' && ent.completo && !ent.muerto);
 }
 
+function hayGranja(equipo) {
+  for (const b of partida.edificios) {
+    if (esGranja(b) && b.equipo === equipo) return true;
+  }
+  return false;
+}
+
+function granjaLibre(u) {
+  let mejor = null;
+  let mejorD = Infinity;
+  for (const b of partida.edificios) {
+    if (!esGranja(b) || b.equipo !== u.equipo) continue;
+    if (u.nodoId !== b.id && trabajadoresGranja(b.id) >= 3) continue;
+    const d = Math.hypot(b.x - u.x, b.y - u.y);
+    if (d < mejorD) {
+      mejorD = d;
+      mejor = b;
+    }
+  }
+  return mejor;
+}
+
+function hayFuente(tipo, equipo) {
+  if (tipo === 'comida' && hayGranja(equipo)) return true;
+  for (const n of partida.nodos) {
+    if (n.cantidad > 0 && n.tipo === tipo) return true;
+  }
+  return false;
+}
+
+function reasignarRecurso(u, tipo) {
+  if (tipo === 'comida') {
+    const granja = granjaLibre(u);
+    if (granja) {
+      u.nodoId = granja.id;
+      u.recurso = 'comida';
+      u.estado = 'recolectar';
+      u.temporizador = 0.2;
+      return true;
+    }
+  }
+  const nodo = tipo ? nodoMasCercano(u, tipo) : null;
+  if (nodo) {
+    u.nodoId = nodo.id;
+    u.recurso = nodo.tipo;
+    u.estado = 'recolectar';
+    u.temporizador = 0.15;
+    return true;
+  }
+  return false;
+}
+
 function trabajadoresGranja(id) {
   let n = 0;
   for (const u of partida.unidades) {
@@ -951,19 +1012,16 @@ function actualizarRecoleccion(u, dt) {
   }
   if (!nodo || nodo.cantidad <= 0) {
     const tipo = u.recurso || u.cargaTipo;
-    nodo = tipo ? nodoMasCercano(u, tipo) : null;
-    if (nodo && u.carga < u.cargaMax) {
-      u.nodoId = nodo.id;
-      u.recurso = nodo.tipo;
-    } else if (u.carga > 0) {
+    if (u.carga > 0 && u.cargaTipo) {
       u.estado = 'entregar';
       return;
-    } else {
-      if (tipo) avisarSinRecurso(tipo);
-      u.estado = 'quieto';
-      u.nodoId = null;
-      return;
     }
+    if (reasignarRecurso(u, tipo)) return;
+    if (tipo) avisarSinRecurso(tipo, u.equipo);
+    u.estado = 'quieto';
+    u.nodoId = null;
+    if (!hayFuente(tipo, u.equipo)) u.recurso = null;
+    return;
   }
   if (u.carga > 0 && u.cargaTipo && u.cargaTipo !== nodo.tipo) {
     u.estado = 'entregar';
@@ -992,12 +1050,13 @@ function actualizarRecoleccion(u, dt) {
 
 function ritmoRecoleccion(tipo) {
   if (tipo === 'comida') return { cada: 0.95, toma: 4, carga: 14 };
-  if (tipo === 'madera') return { cada: 0.75, toma: 6, carga: 18 };
-  return { cada: 1.7, toma: 3, carga: 8 };
+  if (tipo === 'madera') return { cada: 0.8, toma: 5, carga: 16 };
+  return { cada: 1.8, toma: 3, carga: 8 };
 }
 
-function avisarSinRecurso(tipo) {
+function avisarSinRecurso(tipo, equipo) {
   if (!partida || partida.fase !== 'jugando') return;
+  if (hayFuente(tipo, equipo || 'patriota')) return;
   const ahora = partida.tiempo;
   if (partida.ultimoAvisoRecurso && partida.ultimoAvisoRecurso.tipo === tipo && ahora - partida.ultimoAvisoRecurso.t < 10) return;
   partida.ultimoAvisoRecurso = { tipo, t: ahora };
@@ -1047,17 +1106,18 @@ function actualizarEntrega(u, dt) {
     u.temporizador = 0.15;
     return;
   }
-  if (!nodo || nodo.cantidad <= 0) nodo = tipo ? nodoMasCercano(u, tipo) : null;
-  if (nodo) {
-    u.nodoId = nodo.id;
-    u.recurso = nodo.tipo || tipo;
-    u.estado = 'recolectar';
-    u.temporizador = 0.15;
-  } else {
-    if (tipo) avisarSinRecurso(tipo);
+  if (!nodo || nodo.cantidad <= 0) {
+    if (reasignarRecurso(u, tipo)) return;
+    if (tipo) avisarSinRecurso(tipo, u.equipo);
     u.estado = 'quieto';
     u.nodoId = null;
+    if (!hayFuente(tipo, u.equipo)) u.recurso = null;
+    return;
   }
+  u.nodoId = nodo.id;
+  u.recurso = nodo.tipo || tipo;
+  u.estado = 'recolectar';
+  u.temporizador = 0.15;
 }
 
 function actualizarConstruccion(u, dt) {
@@ -1122,6 +1182,15 @@ function retomarAtaque(u) {
 }
 
 function actualizarAtaque(u, dt) {
+  if (u.cazaAldeanos) {
+    let presa = porId(u.objetivoId);
+    if (!presa || presa.muerto || presa.hp <= 0 || presa.tipo !== 'aldeano') presa = aldeanoEnemigo(u);
+    if (presa) {
+      u.objetivoId = presa.id;
+      combatir(u, presa, dt);
+      return;
+    }
+  }
   let objetivo = porId(u.objetivoId);
   if (!objetivo || objetivo.muerto || objetivo.hp <= 0 || objetivo.equipo === u.equipo) {
     objetivo = retomarAtaque(u);
@@ -1130,7 +1199,29 @@ function actualizarAtaque(u, dt) {
   combatir(u, objetivo, dt);
 }
 
+function aldeanoEnemigo(u) {
+  let mejor = null;
+  let mejorD = 2800;
+  for (const otro of partida.unidades) {
+    if (otro.muerto || otro.hp <= 0 || otro.equipo === u.equipo || otro.tipo !== 'aldeano') continue;
+    const d = Math.hypot(otro.x - u.x, otro.y - u.y);
+    if (d < mejorD) {
+      mejorD = d;
+      mejor = otro;
+    }
+  }
+  return mejor;
+}
+
 function actualizarAsalto(u, dt) {
+  if (u.cazaAldeanos) {
+    const presa = aldeanoEnemigo(u);
+    if (presa) {
+      u.objetivoId = presa.id;
+      combatir(u, presa, dt);
+      return;
+    }
+  }
   const amenaza = enemigoCercano(u, 168, true);
   let objetivo = amenaza;
   if (!objetivo) {
@@ -1155,9 +1246,15 @@ function pensarQuieto(u) {
       u.estado = 'entregar';
       return;
     }
-    if (u.nodoId && porId(u.nodoId)) {
+    const nodo = porId(u.nodoId);
+    if (esGranja(nodo) || (nodo && nodo.clase === 'nodo' && nodo.cantidad > 0)) {
       u.estado = 'recolectar';
       return;
+    }
+    if (u.recurso || u.nodoId) {
+      const tipo = u.recurso || (nodo && nodo.tipo);
+      if (reasignarRecurso(u, tipo)) return;
+      if (!hayFuente(tipo, u.equipo)) u.recurso = null;
     }
     return;
   }
@@ -1190,6 +1287,7 @@ function actualizarUnidad(u, dt) {
     if (!u.destino || moverHacia(u, u.destino.x, u.destino.y, dt)) {
       u.estado = 'quieto';
       u.destino = null;
+      u.velGrupo = 0;
     }
   } else if (u.estado === 'recolectar') actualizarRecoleccion(u, dt);
   else if (u.estado === 'entregar') actualizarEntrega(u, dt);
@@ -1234,42 +1332,46 @@ function actualizarColas(dt) {
 
 function planOleada(n) {
   const dif = partida.dificultad || 'normal';
+  const mil = contarMilitares('patriota');
   if (dif === 'facil') {
     if (n <= 1) return { inf: 1, cab: 0 };
     if (n === 2) return { inf: 2, cab: 0 };
     return { inf: 2, cab: 1 };
   }
   if (dif !== 'dificil') {
+    const extra = Math.floor(Math.max(0, mil - 12) / 8);
     if (n <= 1) return { inf: 3, cab: 0 };
-    if (n === 2) return { inf: 4, cab: 0 };
-    if (n === 3) return { inf: 3, cab: 1 };
-    return { inf: 4, cab: 1 };
+    if (n === 2) return { inf: Math.min(5, 4 + extra), cab: 0 };
+    const inf = Math.min(6, 4 + Math.floor((n - 3) / 2) + extra);
+    const cab = n >= 4 ? 1 : 0;
+    return { inf, cab };
   }
+  const extra = Math.floor(Math.max(0, mil - 16) / 8);
   if (n <= 1) return { inf: 2, cab: 0 };
-  if (n === 2) return { inf: 3, cab: 1 };
-  if (n === 3) return { inf: 4, cab: 1 };
-  if (n === 4) return { inf: 4, cab: 2 };
-  return { inf: Math.min(6, 3 + n), cab: 2 };
+  if (n === 2) return { inf: 3, cab: 0 };
+  if (n === 3) return { inf: 3, cab: 1 };
+  if (n === 4) return { inf: 4, cab: 1 };
+  if (n === 5) return { inf: 6, cab: 1 };
+  if (n === 6) return { inf: Math.min(10, 8 + extra), cab: 2 };
+  let cab = Math.min(6, 2 + (n - 6) + extra);
+  let inf = Math.min(14, 6 + (n - 6) * 2 + extra);
+  if (inf + cab > 20) inf = 20 - cab;
+  return { inf, cab };
 }
 
 function reservaGuarnicion() {
   const t = partida.tiempo;
+  const mil = contarMilitares('patriota');
   const dif = partida.dificultad || 'normal';
-  if (dif === 'facil') {
-    if (t < 360) return 2;
-    if (t < 720) return 3;
-    return 4;
-  }
+  if (dif === 'facil') return t < 480 ? 2 : 3;
   if (dif !== 'dificil') {
-    if (t < 300) return 2;
-    if (t < 600) return 2;
-    if (t < 900) return 3;
-    return 4;
+    let n = t < 480 ? 2 : t < 780 ? 3 : t < 1020 ? 4 : 5;
+    n += Math.floor(Math.max(0, mil - 14) / 8);
+    return Math.min(6, n);
   }
-  if (t < 240) return 5;
-  if (t < 480) return 7;
-  if (t < 720) return 8;
-  return 8;
+  let n = t < 300 ? 4 : t < 640 ? 6 : t < 840 ? 7 : t < 1020 ? 9 : 11;
+  n += Math.floor(Math.max(0, mil - 16) / 6);
+  return Math.min(14, n);
 }
 
 function casaRealista() {
@@ -1288,7 +1390,7 @@ function cupoEntrenamiento() {
   if (!pendiente) {
     const sig = planOleada(ia.oleada + 1);
     prep = sig.inf + sig.cab;
-    if (partida.dificultad === 'dificil') prep = Math.min(prep, 4);
+    if (partida.dificultad === 'facil') prep = Math.min(prep, 2);
   }
   return reservaGuarnicion() + pendiente + prep;
 }
@@ -1327,13 +1429,38 @@ function amenazaCercaDeRealistas() {
 function responderDefensa(amenaza) {
   for (const u of partida.unidades) {
     if (u.muerto || u.equipo !== 'realista' || u.tipo === 'aldeano') continue;
-    if (u.estado === 'asalto') continue;
+    if (u.estado === 'asalto' || u.cazaAldeanos) continue;
     if (u.estado !== 'quieto' && u.estado !== 'mover' && u.estado !== 'atacar') continue;
     u.estado = 'atacar';
     u.objetivoId = amenaza.id;
     u.asaltoId = null;
     u.destino = null;
   }
+}
+
+function enviarIncursion() {
+  const ia = partida.ia;
+  if (!ia || ia.incursionHecha || partida.dificultad !== 'dificil') return false;
+  if (partida.tiempo < 240) return false;
+  const casa = casaRealista();
+  if (casa.length < 5) return false;
+  const presa = centroDe('patriota');
+  if (!presa) return false;
+  let n = 0;
+  for (const u of casa) {
+    if (n >= 2 || u.tipo === 'dragon') continue;
+    u.cazaAldeanos = true;
+    u.estado = 'atacar';
+    u.objetivoId = null;
+    u.asaltoId = null;
+    u.destino = null;
+    u.nodoId = null;
+    u.velGrupo = 0;
+    n += 1;
+  }
+  if (!n) return false;
+  ia.incursionHecha = true;
+  return true;
 }
 
 function anunciarOla(enviados) {
@@ -1360,6 +1487,7 @@ function despacharOla() {
   }
   const sobrantes = casa.slice(reserva);
   let enviados = 0;
+  let cazadores = partida.dificultad === 'dificil' ? (ia.oleada <= 1 ? 8 : 2) : 0;
   for (const u of sobrantes) {
     const esCab = u.tipo === 'dragon';
     const mandaInf = !esCab && ia.olaInf > 0;
@@ -1367,6 +1495,10 @@ function despacharOla() {
     const relleno = (!esCab && ia.olaInf <= 0 && ia.olaCab > 0) || (esCab && ia.olaCab <= 0 && ia.olaInf > 0);
     if (!mandaInf && !mandaCab && !relleno) continue;
     ordenarAsalto(u, tc);
+    if (cazadores > 0 && !esCab) {
+      u.cazaAldeanos = true;
+      cazadores -= 1;
+    }
     enviados += 1;
     if (esCab && ia.olaCab > 0) ia.olaCab -= 1;
     else if (!esCab && ia.olaInf > 0) ia.olaInf -= 1;
@@ -1379,20 +1511,39 @@ function despacharOla() {
 
 function lanzarOleada() {
   const ia = partida.ia;
+  const dif = partida.dificultad || 'normal';
   ia.oleada += 1;
   const plan = planOleada(ia.oleada);
-  ia.olaInf = Math.min(8, (ia.olaInf || 0) + plan.inf);
-  ia.olaCab = Math.min(4, (ia.olaCab || 0) + plan.cab);
-  ia.oleadaEn = 120;
+  const topeInf = dif === 'dificil' ? 14 : dif === 'facil' ? 3 : 8;
+  const topeCab = dif === 'dificil' ? 6 : dif === 'facil' ? 1 : 2;
+  ia.olaInf = Math.min(topeInf, (ia.olaInf || 0) + plan.inf);
+  ia.olaCab = Math.min(topeCab, (ia.olaCab || 0) + plan.cab);
+  ia.oleadaEn = dif === 'facil' ? 150 : 120;
   ia.ataquePendiente = true;
   despacharOla();
+}
+
+function topeEjercitoIA() {
+  const t = partida.tiempo;
+  const mil = contarMilitares('patriota');
+  const dif = partida.dificultad || 'normal';
+  if (dif === 'facil') return 8;
+  if (dif !== 'dificil') {
+    let n = t < 420 ? 5 : t < 780 ? 6 : t < 1100 ? 8 : 10;
+    n = Math.max(n, Math.floor(mil * 0.2) + 3);
+    return Math.min(10, n);
+  }
+  let n = t < 1100 ? 11 : 22;
+  n = Math.max(n, reservaGuarnicion() + 2);
+  if (t >= 1100) n = Math.max(n, Math.floor(mil * 0.4) + 8);
+  return Math.min(t < 1100 ? 11 : 24, n);
 }
 
 function entrenarIA(cuartel) {
   if (!cuartel || !cuartel.completo || cuartel.muerto) return;
   const ia = partida.ia;
   if (cuartel.cola.length >= 2) return;
-  const topeCampo = partida.dificultad === 'dificil' ? 14 : 12;
+  const topeCampo = topeEjercitoIA();
   if (contarMilitares('realista') + cuartel.cola.length >= topeCampo) return;
   if (casaRealista().length + cuartel.cola.length >= cupoEntrenamiento()) return;
   const dragones = casaRealista().filter((u) => u.tipo === 'dragon').length;
@@ -1413,7 +1564,12 @@ function entrenarIA(cuartel) {
 function actualizarIA(dt) {
   if (partida.demo) return;
   const ia = partida.ia;
-  const ingreso = partida.dificultad === 'dificil' ? 1 : partida.dificultad === 'facil' ? 0.55 : 0.72;
+  const dif = partida.dificultad || 'normal';
+  const baseIngreso = dif === 'dificil' ? 1 : dif === 'facil' ? 0.55 : 0.8;
+  const milJugador = contarMilitares('patriota');
+  const bolsillo = partida.comida + partida.oro + partida.madera * 0.2;
+  const bonus = Math.min(0.55, milJugador * 0.018 + bolsillo / 7000);
+  const ingreso = baseIngreso * (1 + bonus);
   ia.comida += 3.6 * ingreso * dt;
   ia.madera += 2.2 * ingreso * dt;
   ia.oro += 2.8 * ingreso * dt;
@@ -1459,6 +1615,7 @@ function actualizarIA(dt) {
     }
   }
   entrenarIA(cuartel);
+  if (dif === 'dificil') enviarIncursion();
   if (ia.oleadaEn <= 0) lanzarOleada();
   else despacharOla();
 }
@@ -1705,7 +1862,9 @@ function paso(dtReal) {
   publicarOciosos();
 }
 
-function radioBloqueo(n) {
+function radioBloqueo(n, tipoEdificio) {
+  const campamento = tipoEdificio === 'maderero' || tipoEdificio === 'minero';
+  if (campamento) return Math.max(4, n.radio * 0.12);
   if (n.variante === 'bosque') return n.radio + 20;
   if (n.variante === 'huerta') return Math.max(n.radio + 18, 50);
   if (n.variante === 'mina') return n.radio + 18;
@@ -1713,25 +1872,33 @@ function radioBloqueo(n) {
   return n.radio + 12;
 }
 
-function posicionValida(x, y, tipo) {
+function motivoColocacion(x, y, tipo) {
   const spec = EDIF[tipo || 'cuartel'] || EDIF.cuartel;
   const ancho = spec.ancho;
   const alto = spec.alto;
   const rect = { x, y, ancho, alto };
-  const m = 16;
-  if (x - ancho / 2 < m || y - alto / 2 < m || x + ancho / 2 > MUNDO.w - m || y + alto / 2 > MUNDO.h - m) return false;
+  const m = 2;
+  if (x - ancho / 2 < m || y - alto / 2 < m || x + ancho / 2 > MUNDO.w - m || y + alto / 2 > MUNDO.h - m) {
+    return 'Fuera del mapa.';
+  }
   for (const b of partida.edificios) {
     if (b.muerto) continue;
     const marco = marcoVisual(b);
     const bx = b.x + marco.ox;
     const by = b.y + marco.oy;
-    if (Math.abs(bx - x) < (marco.ancho + ancho) / 2 + 10 && Math.abs(by - y) < (marco.alto + alto) / 2 + 10) return false;
+    if (Math.abs(bx - x) < (marco.ancho + ancho) / 2 + 8 && Math.abs(by - y) < (marco.alto + alto) / 2 + 8) {
+      return 'Encima de un edificio.';
+    }
   }
   for (const n of partida.nodos) {
     if (n.cantidad <= 0) continue;
-    if (circuloTocaRect(n.x, n.y, radioBloqueo(n), rect)) return false;
+    if (circuloTocaRect(n.x, n.y, radioBloqueo(n, tipo), rect)) return 'Encima de un recurso.';
   }
-  return true;
+  return '';
+}
+
+function posicionValida(x, y, tipo) {
+  return motivoColocacion(x, y, tipo) === '';
 }
 
 function edificioEn(x, y) {
@@ -1748,10 +1915,7 @@ function intentarColocar(x, y) {
   if (partida.fase !== 'jugando' || partida.modo !== 'colocar') return;
   const encima = edificioEn(x, y);
   if (encima) {
-    partida.modo = 'normal';
-    partida.constructores = [];
-    partida.seleccion = [encima.id];
-    refrescarInterfaz();
+    aviso('Encima de un edificio.');
     return;
   }
   const tipo = partida.construir === 'casa' ? 'casa' : partida.construir === 'granja' ? 'granja' : partida.construir === 'maderero' ? 'maderero' : partida.construir === 'minero' ? 'minero' : 'cuartel';
@@ -1770,8 +1934,9 @@ function intentarColocar(x, y) {
     partida.modo = 'normal';
     return;
   }
-  if (!posicionValida(x, y, tipo)) {
-    aviso('No se puede construir ahí.');
+  const motivo = motivoColocacion(x, y, tipo);
+  if (motivo) {
+    aviso(motivo);
     return;
   }
   const elegidos = [];
@@ -1980,15 +2145,18 @@ function seleccionarEjercito() {
   refrescarInterfaz();
 }
 
+function aldeanoSinTarea(u) {
+  if (!u || u.muerto || u.equipo !== 'patriota' || u.tipo !== 'aldeano') return false;
+  if (u.estado !== 'quieto') return false;
+  if (u.nodoId || u.objetivoId || u.destino || u.asaltoId || u.recurso) return false;
+  if (u.carga > 0) return false;
+  return true;
+}
+
 function aldeanosOciosos() {
   const ids = [];
   if (!partida) return ids;
-  for (const u of partida.unidades) {
-    if (u.muerto || u.equipo !== 'patriota' || u.tipo !== 'aldeano') continue;
-    if (u.estado !== 'quieto') continue;
-    if (u.nodoId || u.objetivoId || u.destino) continue;
-    ids.push(u.id);
-  }
+  for (const u of partida.unidades) if (aldeanoSinTarea(u)) ids.push(u.id);
   return ids;
 }
 
@@ -2017,10 +2185,7 @@ function seleccionarUnOcioso() {
 }
 
 function seleccionarOciosos() {
-  const ids = [];
-  for (const u of partida.unidades) {
-    if (!u.muerto && u.equipo === 'patriota' && u.tipo === 'aldeano' && u.estado === 'quieto') ids.push(u.id);
-  }
+  const ids = aldeanosOciosos();
   if (!ids.length) {
     aviso('No hay aldeanos ociosos.');
     return;
@@ -2249,8 +2414,16 @@ function coordsEvento(e) {
   return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
 
+function bordeSurPantalla() {
+  const barra = document.getElementById('barra-inferior');
+  if (!barra) return vista.h;
+  const top = barra.getBoundingClientRect().top;
+  if (top < 80 || top > vista.h) return vista.h;
+  return top;
+}
+
 function enBorde(x, y, margen) {
-  return x < margen || y < margen || x > vista.w - margen || y > vista.h - margen;
+  return x < margen || y < margen || x > vista.w - margen || y >= bordeSurPantalla() - margen;
 }
 
 function vectorBorde(x, y, margen) {
@@ -2259,7 +2432,7 @@ function vectorBorde(x, y, margen) {
   if (x < margen) dx = -1;
   else if (x > vista.w - margen) dx = 1;
   if (y < margen) dy = -1;
-  else if (y > vista.h - margen) dy = 1;
+  else if (y >= bordeSurPantalla() - margen) dy = 1;
   return { x: dx, y: dy };
 }
 
@@ -2396,12 +2569,13 @@ function alRueda(e) {
 }
 
 function alTeclaBajar(e) {
-  if (e.target && e.target.closest && e.target.closest('input, textarea, button')) {
-    if (e.key !== 'Escape') return;
-  }
+  const campo = e.target && e.target.closest && e.target.closest('input, textarea');
+  if (campo && e.key !== 'Escape') return;
   if (teclaCamara(e.key)) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     e.preventDefault();
+    const boton = e.target && e.target.closest && e.target.closest('button');
+    if (boton && typeof boton.blur === 'function') boton.blur();
   }
   if (!e.repeat && (e.key === 'q' || e.key === 'Q' || e.key === ',')) {
     e.preventDefault();
@@ -2705,7 +2879,14 @@ function textoPista() {
     return 'Tu centro urbano ha caído.';
   }
   if (partida.modo === 'colocar') {
-    const obra = partida.construir === 'casa' ? 'la casa' : partida.construir === 'granja' ? 'la granja' : 'el cuartel';
+    const nombres = {
+      casa: 'la casa',
+      granja: 'la granja',
+      maderero: 'el campamento maderero',
+      minero: 'el campamento minero',
+      cuartel: 'el cuartel',
+    };
+    const obra = nombres[partida.construir] || 'el cuartel';
     return tacto
       ? 'Toca el terreno para colocar ' + obra + '.'
       : 'Clic en el terreno para colocar ' + obra + '. Escape cancela.';
@@ -3261,13 +3442,27 @@ function dibujarNodo(n) {
   }
 }
 
+function dibujarAnilloBando(u) {
+  const rx = u.radio * 1.45;
+  const ry = Math.max(5.5, u.radio * 0.5);
+  const y = u.y + 3;
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 4.2;
+  ctx.strokeStyle = u.equipo === 'patriota' ? '#1f4e89' : '#9c2b2b';
+  ctx.beginPath();
+  ctx.ellipse(u.x, y, rx, ry, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.lineWidth = 2.4;
+  ctx.strokeStyle = u.equipo === 'patriota' ? '#e2b33a' : '#f7f7f7';
+  ctx.beginPath();
+  ctx.ellipse(u.x, y, rx * 0.68, ry * 0.58, 0, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
 function dibujarUnidad(u) {
   if (!enVista(u.x, u.y, 70)) return;
   const seleccionado = partida.seleccion.indexOf(u.id) >= 0;
-  ctx.fillStyle = u.equipo === 'patriota' ? 'rgba(31,78,137,0.28)' : 'rgba(156,43,43,0.28)';
-  ctx.beginPath();
-  ctx.ellipse(u.x, u.y + 2, u.radio * 1.05, u.radio * 0.45, 0, 0, Math.PI * 2);
-  ctx.fill();
+  dibujarAnilloBando(u);
   if (seleccionado) {
     const pulso = 1 + Math.sin(partida.tiempo * 6 + u.id) * 0.06;
     ctx.strokeStyle = u.equipo === 'patriota' ? '#ffe08a' : '#ffb4b4';
@@ -3583,6 +3778,7 @@ function resumenPublico() {
       carga: u.carga,
       cargaTipo: u.cargaTipo,
       dano: u.dano,
+      caza: !!u.cazaAldeanos,
     })),
     edificios: partida.edificios.filter((b) => !b.muerto).map((b) => ({
       id: b.id,
