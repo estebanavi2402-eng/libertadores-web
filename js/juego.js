@@ -94,9 +94,9 @@ const SITIOS_PATRIOTAS = [
 ];
 
 const lienzo = document.getElementById('lienzo');
-const ctx = lienzo.getContext('2d', { alpha: false });
+let ctx = lienzo.getContext('2d', { alpha: false });
 const minimapa = document.getElementById('minimapa');
-const mctx = minimapa.getContext('2d', { alpha: false });
+let mctx = minimapa.getContext('2d', { alpha: false });
 const elComida = document.getElementById('val-comida');
 const elMadera = document.getElementById('val-madera');
 const elOro = document.getElementById('val-oro');
@@ -128,6 +128,10 @@ let punteroMundo = { x: 600, y: 1000 };
 let avisoTimer = 0;
 let ultimo = 0;
 let iniciado = false;
+let depuracionActiva = false;
+let esperandoCuadro = false;
+let pedidoCuadro = 0;
+let lienzoRotoEn = 0;
 
 function rng(semilla) {
   let a = semilla >>> 0;
@@ -377,6 +381,8 @@ function crearPartida(opciones) {
     caidos: [],
     reemplazoEn: 0,
     sinAldeanos: 0,
+    ejercito: 0,
+    depuracion: depuracionActiva,
     ia: {
       comida: 160,
       madera: 260,
@@ -2070,7 +2076,9 @@ function enemigosJuntoAlCentro() {
   if (!tc) return false;
   for (const u of partida.unidades) {
     if (u.muerto || u.hp <= 0 || u.adentro || u.equipo === 'patriota') continue;
-    if (Math.hypot(u.x - tc.x, u.y - tc.y) < 250) return true;
+    const d = Math.hypot(u.x - tc.x, u.y - tc.y);
+    if (d < 380) return true;
+    if (d < 700 && (u.objetivoId === tc.id || u.asaltoId === tc.id)) return true;
   }
   return false;
 }
@@ -2095,7 +2103,7 @@ function comerciar(tipo) {
 
 function centroEnPeligro() {
   const tc = centroDe('patriota');
-  return !!(tc && tc.hp < tc.hpMax * 0.5);
+  return !!(tc && tc.hp <= tc.hpMax * 0.5);
 }
 
 function volverBloqueado() {
@@ -2298,6 +2306,7 @@ function paso(dtReal) {
       if (!ent.muerto && ent.hp <= 0) morir(ent);
     }
     recogerMuertos();
+    revisarEjercito();
     comprobarFin();
   } else if (partida.fase === 'resolviendo') {
     partida.cierreEn -= dtReal;
@@ -2592,6 +2601,111 @@ function entrenarVarios(edificio, tipo, cantidad) {
 
 function esMilitar(u) {
   return u && u.esUnidad && u.equipo === 'patriota' && u.tipo !== 'aldeano' && !u.muerto;
+}
+
+function revisarEjercito() {
+  if (!partida || partida.fase !== 'jugando') return;
+  const n = contarMilitares('patriota');
+  if ((partida.ejercito || 0) > 0 && n === 0) aviso('Tu ejército ha caído.');
+  partida.ejercito = n;
+}
+
+function soldadosSeleccionados() {
+  const lista = [];
+  if (!partida) return lista;
+  for (const id of partida.seleccion) {
+    const u = porId(id);
+    if (esMilitar(u)) lista.push(u);
+  }
+  return lista;
+}
+
+function formarSoldados(modo) {
+  if (!partida || partida.fase !== 'jugando') return;
+  const lista = soldadosSeleccionados();
+  if (lista.length < 2) {
+    aviso('Selecciona al menos dos soldados para formarlos.');
+    return;
+  }
+  let sx = 0;
+  let sy = 0;
+  let frente = 0;
+  let lenta = Infinity;
+  for (const u of lista) {
+    sx += u.x;
+    sy += u.y;
+    frente += u.frente || 1;
+    lenta = Math.min(lenta, u.velocidad);
+  }
+  sx /= lista.length;
+  sy /= lista.length;
+  const mira = frente >= 0 ? 1 : -1;
+  const sep = 34;
+  const columna = modo === 'columna';
+  lista.forEach((u, i) => {
+    const fila = columna ? i * sep : 0;
+    const lado = columna ? 0 : (i - (lista.length - 1) / 2) * sep;
+    u.estado = 'mover';
+    u.destino = {
+      x: clamp(sx - mira * fila, u.radio + 8, MUNDO.w - u.radio - 8),
+      y: clamp(sy + lado, u.radio + 8, MUNDO.h - u.radio - 8),
+    };
+    u.objetivoId = null;
+    u.asaltoId = null;
+    u.nodoId = null;
+    u.recurso = null;
+    u.velGrupo = lenta;
+    u.frente = mira;
+  });
+  marcar(sx, sy);
+  aviso(columna ? 'Columna. Los soldados se alinean uno detrás de otro.' : 'Línea. Los soldados se alinean hombro con hombro.');
+}
+
+function accionDepuracion(accion) {
+  if (!depuracionActiva || !partida || partida.fase !== 'jugando') return;
+  if (accion === 'danar') {
+    let edificio = null;
+    for (const id of partida.seleccion) {
+      const ent = porId(id);
+      if (ent && ent.esEdificio && !ent.muerto) edificio = ent;
+    }
+    if (!edificio) {
+      aviso('Selecciona un edificio para dejarlo a la mitad de vida.');
+      return;
+    }
+    edificio.hp = Math.max(1, edificio.hpMax * 0.5);
+    edificio.golpe = 0.2;
+    aviso('El edificio queda a la mitad de vida.');
+  } else if (accion === 'aldeano') {
+    let aldeano = null;
+    for (const u of partida.unidades) {
+      if (!u.muerto && u.equipo === 'patriota' && u.tipo === 'aldeano') { aldeano = u; break; }
+    }
+    if (!aldeano) {
+      aviso('No queda ningún aldeano.');
+      return;
+    }
+    aldeano.hp = 0;
+    morir(aldeano);
+    recogerMuertos();
+    revisarEjercito();
+    comprobarFin();
+    aviso('Un aldeano ha caído.');
+  } else if (accion === 'poblacion') {
+    let guardia = 0;
+    while (calcularPoblacion() < partida.tope && guardia < 80) {
+      crearUnidad('fusilero', 'patriota', 640, 900);
+      guardia += 1;
+    }
+    revisarEjercito();
+    aviso('La población está llena.');
+  } else if (accion === 'recursos') {
+    partida.comida += 500;
+    partida.madera += 500;
+    partida.oro += 500;
+    aviso('Sumas 500 de comida, de madera y de oro.');
+  }
+  refrescarInterfaz();
 }
 
 function seleccionarEjercito() {
@@ -3043,6 +3157,16 @@ function alTeclaBajar(e) {
     e.preventDefault();
     seleccionarEjercito();
   }
+  if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'f' || e.key === 'F')) {
+    e.preventDefault();
+    formarSoldados('linea');
+    refrescarInterfaz();
+  }
+  if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'g' || e.key === 'G')) {
+    e.preventDefault();
+    formarSoldados('columna');
+    refrescarInterfaz();
+  }
   if (!e.repeat && e.key === '.') {
     e.preventDefault();
     seleccionarOciosos();
@@ -3143,7 +3267,14 @@ function registrarEntrada() {
       const ed = edificioPropioUnico(seleccionEntidades());
       if (ed) entrenarVarios(ed, btn.dataset.tipo, e.shiftKey ? 5 : 1);
     }
+    else if (btn.dataset.accion === 'formar') formarSoldados(btn.dataset.forma === 'columna' ? 'columna' : 'linea');
     refrescarInterfaz();
+  });
+  const depuracion = document.getElementById('depuracion');
+  if (depuracion) depuracion.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn || !btn.dataset.debug) return;
+    accionDepuracion(btn.dataset.debug);
   });
 }
 
@@ -3306,6 +3437,13 @@ function renderComandos() {
       '<span class="btn-titulo">Construir mercado</span>' +
       '<span class="btn-costo">' + textoCosto(COSTO.mercado) + ' · cambia madera</span></button>';
   }
+  const soldados = soldadosSeleccionados();
+  if (soldados.length >= 2 && partida.modo !== 'colocar') {
+    html += '<button type="button" data-accion="formar" data-forma="linea" title="Forma a los soldados en línea, hombro con hombro. Atajo: F">' +
+      '<span class="btn-titulo">Línea</span><span class="btn-costo">Atajo F</span></button>' +
+      '<button type="button" data-accion="formar" data-forma="columna" title="Forma a los soldados en columna, uno detrás de otro. Atajo: G">' +
+      '<span class="btn-titulo">Columna</span><span class="btn-costo">Atajo G</span></button>';
+  }
   if (ed && ed.completo && (ed.tipo === 'centro' || ed.tipo === 'cuartel')) {
     html += '<div class="cola"><span class="cola-texto"></span><div class="progreso"><span></span></div></div>';
   }
@@ -3326,6 +3464,15 @@ function refrescarProgreso() {
   });
   const nota = elComandos.querySelector('.nota-obra');
   if (nota && ed) nota.textContent = 'En construcción ' + Math.floor((ed.obra || 0) * 100) + '%';
+  const volverBtn = elComandos.querySelector('[data-accion="volver"]');
+  if (volverBtn) {
+    const bloqueado = volverBloqueado();
+    const tc = centroDe('patriota');
+    volverBtn.disabled = bloqueado;
+    volverBtn.classList.toggle('insuficiente', bloqueado);
+    const costo = volverBtn.querySelector('.btn-costo');
+    if (costo) costo.textContent = bloqueado ? 'Enemigos cerca' : ((tc ? contarDentro(tc) : 0) + ' dentro');
+  }
   const cola = elComandos.querySelector('.cola');
   if (cola) {
     const item = ed && ed.cola && ed.cola[0];
@@ -3407,8 +3554,8 @@ function textoPista() {
   }
   if (soldado) {
     return tacto
-      ? 'Toca el terreno para mover o un enemigo para atacar.'
-      : 'Clic derecho: mover o atacar.';
+      ? 'Toca el terreno para mover o un enemigo para atacar. Línea y columna forman el grupo.'
+      : 'Clic derecho: mover o atacar. F línea, G columna.';
   }
   if (edificio) return 'Campana guarece a los aldeanos. El centro dispara a quien se acerque. Volver al trabajo los saca.';
   return tacto
@@ -3426,8 +3573,18 @@ function textoReloj(segundos) {
 function aviso(texto) {
   elAviso.textContent = texto;
   elAviso.classList.add('visible');
+  const arriba = document.getElementById('pista-aviso');
+  const pista = document.getElementById('pista');
+  if (pista) pista.classList.remove('oculta');
+  if (arriba) {
+    arriba.hidden = false;
+    arriba.textContent = texto;
+  }
   clearTimeout(avisoTimer);
-  avisoTimer = setTimeout(() => elAviso.classList.remove('visible'), 2400);
+  avisoTimer = setTimeout(() => {
+    elAviso.classList.remove('visible');
+    if (arriba) arriba.hidden = true;
+  }, 4200);
 }
 
 function refrescarInterfaz() {
@@ -4079,11 +4236,13 @@ function dibujarMinimapa() {
 }
 
 function dibujar() {
-  if (!partida) return;
+  if (!partida || !ctx) return;
+  if (ctx.isContextLost && ctx.isContextLost()) throw new Error('contexto perdido');
   ctx.setTransform(vista.dpr, 0, 0, vista.dpr, 0, 0);
   ctx.fillStyle = '#7d9a48';
   ctx.fillRect(0, 0, vista.w, vista.h);
   ctx.save();
+  try {
   ctx.translate(vista.w / 2, vista.h / 2);
   ctx.scale(cam.zoom, cam.zoom);
   ctx.translate(-cam.x, -cam.y);
@@ -4190,7 +4349,9 @@ function dibujar() {
     if (edificioVivo('realista', 'centro')) dibujarRotulo('Campamento realista', CAMP.realista.x, CAMP.realista.y - 78);
     dibujarRotulo('Veta expuesta', 1080, 860);
   }
-  ctx.restore();
+  } finally {
+    ctx.restore();
+  }
   if (gesto && gesto.modo === 'caja') {
     const x = Math.min(gesto.x0, gesto.x);
     const y = Math.min(gesto.y0, gesto.y);
@@ -4257,18 +4418,66 @@ function ajustarTamano() {
   clampCamara();
 }
 
-function bucle(ahora) {
-  requestAnimationFrame(bucle);
-  if (!partida) {
-    ultimo = ahora;
-    return;
+function contextoUtil(contexto) {
+  return !!(contexto && !(contexto.isContextLost && contexto.isContextLost()));
+}
+
+function recuperarLienzo() {
+  const ancho = lienzo.width;
+  const alto = lienzo.height;
+  lienzo.width = Math.max(1, ancho);
+  lienzo.height = Math.max(1, alto);
+  const nuevo = lienzo.getContext('2d', { alpha: false });
+  if (nuevo) ctx = nuevo;
+  const mw = minimapa.width;
+  const mh = minimapa.height;
+  minimapa.width = Math.max(1, mw);
+  minimapa.height = Math.max(1, mh);
+  const nuevoMini = minimapa.getContext('2d', { alpha: false });
+  if (nuevoMini) mctx = nuevoMini;
+}
+
+function pintarEscena() {
+  try {
+    if (!contextoUtil(ctx) || !contextoUtil(mctx)) throw new Error('contexto perdido');
+    dibujar();
+  } catch (err) {
+    const ahora = performance.now();
+    if (ahora - lienzoRotoEn < 400) return;
+    lienzoRotoEn = ahora;
+    recuperarLienzo();
+    try { dibujar(); } catch (err2) { /* el reloj ya avanzó dentro de paso */ }
   }
-  const dtReal = Math.min(0.05, (ahora - ultimo) / 1000);
-  ultimo = ahora;
-  if (dtReal > 0) paso(dtReal);
-  dibujar();
-  refrescarInterfaz();
-  if (!window.__LIBERTAD.listo) window.__LIBERTAD.listo = true;
+}
+
+function cuadro(ahora) {
+  esperandoCuadro = false;
+  const marca = ahora || performance.now();
+  try {
+    if (!partida) ultimo = marca;
+    else {
+      const dtReal = Math.min(0.05, Math.max(0, (marca - ultimo) / 1000));
+      ultimo = marca;
+      if (dtReal > 0) paso(dtReal);
+      pintarEscena();
+      refrescarInterfaz();
+    }
+  } catch (err) { /* un fallo de un cuadro no detiene el siguiente */ }
+  if (partida && !window.__LIBERTAD.listo) window.__LIBERTAD.listo = true;
+  pedirCuadro();
+}
+
+function pedirCuadro() {
+  if (esperandoCuadro) return;
+  esperandoCuadro = true;
+  pedidoCuadro = performance.now();
+  requestAnimationFrame(cuadro);
+}
+
+function vigilarCuadros() {
+  if (document.hidden || !esperandoCuadro) return;
+  if (performance.now() - pedidoCuadro < 450) return;
+  cuadro(performance.now());
 }
 
 function resumenPublico() {
@@ -4339,6 +4548,10 @@ function ocultarCarga() {
 function iniciar() {
   if (iniciado) return;
   iniciado = true;
+  depuracionActiva = new URLSearchParams(location.search).get('debug') === '1';
+  document.body.classList.toggle('depurando', depuracionActiva);
+  const panelDepuracion = document.getElementById('depuracion');
+  if (panelDepuracion) panelDepuracion.hidden = !depuracionActiva;
   if (!ctx || !mctx) throw new Error('No hay lienzo 2D');
   const arranque = () => {
     generarSprites();
@@ -4360,14 +4573,22 @@ function iniciar() {
     registrarEntrada();
     window.addEventListener('resize', ajustarTamano);
     if (window.visualViewport) window.visualViewport.addEventListener('resize', ajustarTamano);
-    document.addEventListener('visibilitychange', () => { ultimo = performance.now(); });
+    document.addEventListener('visibilitychange', () => {
+      ultimo = performance.now();
+      pedidoCuadro = performance.now();
+    });
+    lienzo.addEventListener('contextlost', (e) => e.preventDefault());
+    lienzo.addEventListener('contextrestored', recuperarLienzo);
+    minimapa.addEventListener('contextlost', (e) => e.preventDefault());
+    minimapa.addEventListener('contextrestored', recuperarLienzo);
     ultimo = performance.now();
     if (partida) {
-      dibujar();
+      pintarEscena();
       refrescarInterfaz();
     }
     ocultarCarga();
-    requestAnimationFrame(bucle);
+    pedirCuadro();
+    setInterval(vigilarCuadros, 400);
   };
   ajustarTamano();
   const fino = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
