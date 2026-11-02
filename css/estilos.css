@@ -339,6 +339,53 @@ button.insuficiente {
   transform: translateX(-50%) translateY(0);
 }
 
+#dificultad {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(16, 10, 6, 0.78);
+  padding: 16px;
+}
+
+#dificultad[hidden] { display: none !important; }
+
+#dificultad .tarjeta {
+  width: min(460px, 100%);
+  background: var(--pergamino);
+  color: var(--tinta);
+  border: 4px solid var(--azul);
+  padding: 22px 22px 18px;
+  text-align: center;
+}
+
+#dificultad h2 {
+  font-family: Palatino, "Liberation Serif", Georgia, serif;
+  font-size: 30px;
+  margin: 0 0 8px;
+  color: #1f4e89;
+}
+
+#dificultad p {
+  margin: 0 0 16px;
+  line-height: 1.4;
+}
+
+#dificultad .opciones {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+#dificultad .opciones button {
+  min-width: 120px;
+  text-align: center;
+  font-weight: 700;
+}
+
 #fin {
   position: absolute;
   inset: 0;
