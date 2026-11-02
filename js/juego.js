@@ -23,6 +23,7 @@ const EDIF = {
   centro: { hp: 1800, ancho: 116, alto: 104 },
   cuartel: { hp: 980, ancho: 132, alto: 86 },
   casa: { hp: 360, ancho: 64, alto: 56 },
+  granja: { hp: 420, ancho: 96, alto: 72 },
 };
 
 const STAT = {
@@ -37,6 +38,9 @@ const COSTO = {
   aldeano: { comida: 60, madera: 0, oro: 0, tiempo: 8, poblacion: 1 },
   cuartel: { comida: 0, madera: 120, oro: 0, tiempo: TIEMPO_OBRA },
   casa: { comida: 0, madera: 70, oro: 0, tiempo: 10 },
+  granja: { comida: 0, madera: 110, oro: 0, tiempo: 16 },
+  armas: { comida: 0, madera: 220, oro: 0 },
+  muros: { comida: 0, madera: 180, oro: 0 },
   fusilero: { comida: 34, madera: 30, oro: 40, tiempo: 8, poblacion: 1 },
   lancero: { comida: 26, madera: 40, oro: 62, tiempo: 11, poblacion: 1 },
   fusilero_realista: { comida: 32, madera: 8, oro: 14, tiempo: 8, poblacion: 1 },
@@ -48,6 +52,8 @@ const NODOS = [
   ['comida', 'arbusto', 560, 910, 340, 26],
   ['comida', 'arbusto', 250, 1080, 280, 24],
   ['comida', 'huerta', 640, 1140, 460, 34],
+  ['comida', 'arbusto', 80, 1160, 300, 22],
+  ['comida', 'caza', 140, 1320, 420, 28],
   ['madera', 'bosque', 800, 960, 980, 48],
   ['oro', 'mina', 900, 1080, 720, 30],
   ['oro', 'mina', 1080, 920, 1100, 36],
@@ -209,8 +215,25 @@ function enVista(x, y, margen) {
   return Math.abs(x - cam.x) < hw && Math.abs(y - cam.y) < hh;
 }
 
+function statDe(tipo) {
+  const base = STAT[tipo];
+  const dif = partida && partida.dificultad;
+  if (dif === 'dificil' || !dif) return base;
+  if (tipo === 'fusilero_realista') {
+    return Object.assign({}, base, dif === 'facil'
+      ? { hp: 54, dano: 7, alcance: 108 }
+      : { hp: 64, dano: 8, alcance: 118 });
+  }
+  if (tipo === 'dragon') {
+    return Object.assign({}, base, dif === 'facil'
+      ? { hp: 76, dano: 11, alcance: 20 }
+      : { hp: 86, dano: 13, alcance: 22 });
+  }
+  return base;
+}
+
 function crearUnidad(tipo, equipo, x, y) {
-  const s = STAT[tipo];
+  const s = statDe(tipo);
   const u = {
     id: uid(),
     clase: 'unidad',
@@ -243,6 +266,7 @@ function crearUnidad(tipo, equipo, x, y) {
     polvo: 0,
     muerto: false,
   };
+  if (partida.armas && equipo === 'patriota' && (tipo === 'fusilero' || tipo === 'lancero')) u.dano += 1;
   partida.unidades.push(u);
   return u;
 }
@@ -264,7 +288,7 @@ function crearEdificio(tipo, equipo, x, y, completo) {
     hp: completo ? s.hp : 1,
     obra: completo ? 1 : 0,
     completo: !!completo,
-    tiempoObra: tipo === 'casa' ? 10 : TIEMPO_OBRA,
+    tiempoObra: (COSTO[tipo] && COSTO[tipo].tiempo) || TIEMPO_OBRA,
     cola: [],
     producidos: 0,
     golpe: 0,
@@ -306,6 +330,7 @@ function crearNodo(tipo, variante, x, y, cantidad, radio) {
 
 function crearPartida(opciones) {
   opciones = opciones || {};
+  const dificultad = opciones.dificultad || partida && partida.dificultad || 'normal';
   gesto = null;
   partida = {
     seq: 1,
@@ -324,6 +349,8 @@ function crearPartida(opciones) {
     tope: TOPE_POBLACION,
     modo: 'normal',
     construir: 'cuartel',
+    dificultad,
+    armas: false,
     constructores: [],
     seleccion: [],
     unidades: [],
@@ -398,8 +425,8 @@ function sembrarMundo() {
     ['fusilero_realista', 1710, 400],
     ['fusilero_realista', 1890, 390],
     ['fusilero_realista', 1800, 470],
-    ['dragon', 1930, 450],
   ];
+  if (partida.dificultad === 'dificil') guarnicion.push(['dragon', 1930, 450]);
   for (const g of guarnicion) crearUnidad(g[0], 'realista', g[1], g[2]);
 }
 
@@ -669,6 +696,27 @@ function ordenarMovimiento(lista, x, y) {
   marcar(x, y);
 }
 
+function ordenarGranja(lista, granja) {
+  let puestos = 3 - trabajadoresGranja(granja.id);
+  let rechazo = false;
+  for (const u of lista) {
+    if (u.tipo !== 'aldeano') continue;
+    if (u.nodoId === granja.id && (u.estado === 'recolectar' || u.estado === 'entregar')) continue;
+    if (puestos <= 0) {
+      rechazo = true;
+      continue;
+    }
+    puestos -= 1;
+    u.estado = 'recolectar';
+    u.nodoId = granja.id;
+    u.objetivoId = null;
+    u.asaltoId = null;
+    u.destino = null;
+    u.temporizador = 0.2;
+  }
+  if (rechazo) aviso('La granja ya tiene 3 aldeanos.');
+}
+
 function ordenarRecoleccion(lista, nodo) {
   for (const u of lista) {
     u.estado = 'recolectar';
@@ -851,8 +899,41 @@ function combatir(u, objetivo, dt) {
   }
 }
 
+function esGranja(ent) {
+  return !!(ent && ent.esEdificio && ent.tipo === 'granja' && ent.completo && !ent.muerto);
+}
+
+function trabajadoresGranja(id) {
+  let n = 0;
+  for (const u of partida.unidades) {
+    if (u.muerto || u.nodoId !== id) continue;
+    if (u.estado === 'recolectar' || u.estado === 'entregar' || u.estado === 'quieto') n += 1;
+  }
+  return n;
+}
+
 function actualizarRecoleccion(u, dt) {
   let nodo = porId(u.nodoId);
+  if (esGranja(nodo)) {
+    if (distanciaAlBorde(u, nodo) > 18) {
+      moverHacia(u, nodo.x, nodo.y, dt);
+      return;
+    }
+    u.frente = nodo.x >= u.x ? 1 : -1;
+    u.temporizador -= dt;
+    if (u.temporizador > 0) return;
+    u.temporizador = 1.75;
+    const tope = 8;
+    const toma = Math.min(2, tope - u.carga);
+    if (toma <= 0) {
+      u.estado = 'entregar';
+      return;
+    }
+    u.carga += toma;
+    u.cargaTipo = 'comida';
+    if (u.carga >= tope) u.estado = 'entregar';
+    return;
+  }
   if (!nodo || nodo.cantidad <= 0) {
     nodo = nodoMasCercano(u, u.cargaTipo || 'comida');
     if (nodo && u.carga < u.cargaMax) u.nodoId = nodo.id;
@@ -948,6 +1029,8 @@ function actualizarConstruccion(u, dt) {
     if (b.equipo === 'patriota' && b.tipo === 'casa') {
       recalcularTope();
       aviso('La casa está lista. El tope de población sube.');
+    } else if (b.equipo === 'patriota' && b.tipo === 'granja') {
+      aviso('La granja está lista. Hasta tres aldeanos sacan comida lenta, sin agotarla.');
     } else if (b.equipo === 'patriota' && b.tipo === 'cuartel') {
       aviso('El cuartel está listo. Entrena fusileros y lanceros.');
     }
@@ -1002,7 +1085,14 @@ function actualizarAsalto(u, dt) {
 
 function pensarQuieto(u) {
   if (u.tipo === 'aldeano') {
-    if (u.carga > 0) u.estado = 'entregar';
+    if (u.carga > 0) {
+      u.estado = 'entregar';
+      return;
+    }
+    if (u.nodoId && porId(u.nodoId)) {
+      u.estado = 'recolectar';
+      return;
+    }
     return;
   }
   const enemigo = enemigoCercano(u, u.aggro, false);
@@ -1077,6 +1167,18 @@ function actualizarColas(dt) {
 }
 
 function planOleada(n) {
+  const dif = partida.dificultad || 'normal';
+  if (dif === 'facil') {
+    if (n <= 1) return { inf: 1, cab: 0 };
+    if (n === 2) return { inf: 2, cab: 0 };
+    return { inf: 2, cab: 1 };
+  }
+  if (dif !== 'dificil') {
+    if (n <= 1) return { inf: 1, cab: 0 };
+    if (n === 2) return { inf: 2, cab: 0 };
+    if (n === 3) return { inf: 2, cab: 0 };
+    return { inf: 2, cab: 1 };
+  }
   if (n <= 1) return { inf: 2, cab: 0 };
   if (n === 2) return { inf: 3, cab: 1 };
   if (n === 3) return { inf: 4, cab: 1 };
@@ -1086,6 +1188,18 @@ function planOleada(n) {
 
 function reservaGuarnicion() {
   const t = partida.tiempo;
+  const dif = partida.dificultad || 'normal';
+  if (dif === 'facil') {
+    if (t < 360) return 2;
+    if (t < 720) return 3;
+    return 4;
+  }
+  if (dif !== 'dificil') {
+    if (t < 300) return 3;
+    if (t < 600) return 4;
+    if (t < 900) return 5;
+    return 6;
+  }
   if (t < 240) return 5;
   if (t < 480) return 7;
   if (t < 780) return 9;
@@ -1231,9 +1345,10 @@ function entrenarIA(cuartel) {
 function actualizarIA(dt) {
   if (partida.demo) return;
   const ia = partida.ia;
-  ia.comida += 3.6 * dt;
-  ia.madera += 2.2 * dt;
-  ia.oro += 2.8 * dt;
+  const ingreso = partida.dificultad === 'dificil' ? 1 : partida.dificultad === 'facil' ? 0.55 : 0.72;
+  ia.comida += 3.6 * ingreso * dt;
+  ia.madera += 2.2 * ingreso * dt;
+  ia.oro += 2.8 * ingreso * dt;
   const intruso = amenazaCercaDeRealistas();
   if (intruso) responderDefensa(intruso);
   ia.reintentoCuartel -= dt;
@@ -1519,6 +1634,15 @@ function paso(dtReal) {
     const reloj = textoReloj(partida.tiempo);
     if (elTiempo.textContent !== reloj) elTiempo.textContent = reloj;
   }
+  publicarOciosos();
+}
+
+function radioBloqueo(n) {
+  if (n.variante === 'bosque') return n.radio + 20;
+  if (n.variante === 'huerta') return Math.max(n.radio + 18, 50);
+  if (n.variante === 'mina') return n.radio + 18;
+  if (n.variante === 'caza') return n.radio + 14;
+  return n.radio + 12;
 }
 
 function posicionValida(x, y, tipo) {
@@ -1530,18 +1654,21 @@ function posicionValida(x, y, tipo) {
   if (x - ancho / 2 < m || y - alto / 2 < m || x + ancho / 2 > MUNDO.w - m || y + alto / 2 > MUNDO.h - m) return false;
   for (const b of partida.edificios) {
     if (b.muerto) continue;
-    if (Math.abs(b.x - x) < (b.ancho + ancho) / 2 + 12 && Math.abs(b.y - y) < (b.alto + alto) / 2 + 12) return false;
+    const marco = marcoVisual(b);
+    const bx = b.x + marco.ox;
+    const by = b.y + marco.oy;
+    if (Math.abs(bx - x) < (marco.ancho + ancho) / 2 + 10 && Math.abs(by - y) < (marco.alto + alto) / 2 + 10) return false;
   }
   for (const n of partida.nodos) {
     if (n.cantidad <= 0) continue;
-    if (circuloTocaRect(n.x, n.y, n.radio + 6, rect)) return false;
+    if (circuloTocaRect(n.x, n.y, radioBloqueo(n), rect)) return false;
   }
   return true;
 }
 
 function intentarColocar(x, y) {
-  if (partida.fase !== 'jugando') return;
-  const tipo = partida.construir === 'casa' ? 'casa' : 'cuartel';
+  if (partida.fase !== 'jugando' || partida.modo !== 'colocar') return;
+  const tipo = partida.construir === 'casa' ? 'casa' : partida.construir === 'granja' ? 'granja' : 'cuartel';
   const costo = COSTO[tipo];
   if (!puedePagar(costo)) {
     aviso(faltaRecurso(costo) || 'Falta madera');
@@ -1549,6 +1676,11 @@ function intentarColocar(x, y) {
   }
   if (tipo === 'casa' && casasPatriotas() >= Math.floor((TOPE_MAXIMO - TOPE_POBLACION) / TOPE_POR_CASA)) {
     aviso('La población ya está al máximo.');
+    partida.modo = 'normal';
+    return;
+  }
+  if (tipo === 'granja' && granjasPatriotas() >= 4) {
+    aviso('Ya hay cuatro granjas.');
     partida.modo = 'normal';
     return;
   }
@@ -1583,7 +1715,20 @@ function intentarColocar(x, y) {
   partida.modo = 'normal';
   partida.constructores = [];
   partida.seleccion = [b.id];
-  aviso(tipo === 'casa' ? 'Los aldeanos están levantando la casa.' : 'Los aldeanos están levantando el cuartel.');
+  const textos = {
+    casa: 'Los aldeanos están levantando la casa.',
+    granja: 'Los aldeanos están levantando la granja.',
+    cuartel: 'Los aldeanos están levantando el cuartel.',
+  };
+  aviso(textos[tipo] || textos.cuartel);
+}
+
+function granjasPatriotas() {
+  let n = 0;
+  for (const b of partida.edificios) {
+    if (!b.muerto && b.tipo === 'granja' && b.equipo === 'patriota') n += 1;
+  }
+  return n;
 }
 
 function casasPatriotas() {
@@ -1606,9 +1751,13 @@ function faltaRecurso(costo) {
 }
 
 function empezarColocacion(tipo) {
-  const obra = tipo === 'casa' ? 'casa' : 'cuartel';
+  const obra = tipo === 'casa' ? 'casa' : tipo === 'granja' ? 'granja' : 'cuartel';
   if (obra === 'casa' && casasPatriotas() >= Math.floor((TOPE_MAXIMO - TOPE_POBLACION) / TOPE_POR_CASA)) {
     aviso('La población ya está al máximo.');
+    return;
+  }
+  if (obra === 'granja' && granjasPatriotas() >= 4) {
+    aviso('Ya hay cuatro granjas.');
     return;
   }
   if (!puedePagar(COSTO[obra])) {
@@ -1628,7 +1777,49 @@ function empezarColocacion(tipo) {
   partida.construir = obra;
   partida.modo = 'colocar';
   punteroMundo = { x: aldeanos[0].x + 90, y: aldeanos[0].y - 10 };
-  aviso(obra === 'casa' ? 'Toca el terreno para colocar la casa.' : 'Toca el terreno para colocar el cuartel.');
+  const avisos = {
+    casa: 'Toca el terreno para colocar la casa.',
+    granja: 'Toca el terreno para colocar la granja.',
+    cuartel: 'Toca el terreno para colocar el cuartel.',
+  };
+  aviso(avisos[obra]);
+}
+
+function mejorarArmas() {
+  const ed = edificioPropioUnico(seleccionEntidades());
+  if (!ed || ed.tipo !== 'cuartel' || !ed.completo) return;
+  if (partida.armas) {
+    aviso('Las armas ya están afinadas.');
+    return;
+  }
+  if (!pagar(COSTO.armas)) {
+    aviso(faltaRecurso(COSTO.armas) || 'Falta madera');
+    return;
+  }
+  partida.armas = true;
+  for (const u of partida.unidades) {
+    if (!u.muerto && u.equipo === 'patriota' && (u.tipo === 'fusilero' || u.tipo === 'lancero')) u.dano += 1;
+  }
+  aviso('Armas afinadas. Fusileros y lanceros pegan un poco más.');
+  refrescarInterfaz();
+}
+
+function mejorarMuros() {
+  const ed = edificioPropioUnico(seleccionEntidades());
+  if (!ed || ed.tipo !== 'cuartel' || !ed.completo) return;
+  if (ed.muros) {
+    aviso('El cuartel ya tiene muros.');
+    return;
+  }
+  if (!pagar(COSTO.muros)) {
+    aviso(faltaRecurso(COSTO.muros) || 'Falta madera');
+    return;
+  }
+  ed.muros = true;
+  ed.hpMax += 220;
+  ed.hp += 220;
+  aviso('Muros de estacas. El cuartel aguanta más.');
+  refrescarInterfaz();
 }
 
 function cancelarColocacion() {
@@ -1700,10 +1891,23 @@ function seleccionarEjercito() {
 
 function aldeanosOciosos() {
   const ids = [];
+  if (!partida) return ids;
   for (const u of partida.unidades) {
-    if (!u.muerto && u.equipo === 'patriota' && u.tipo === 'aldeano' && u.estado === 'quieto') ids.push(u.id);
+    if (u.muerto || u.equipo !== 'patriota' || u.tipo !== 'aldeano') continue;
+    if (u.estado !== 'quieto') continue;
+    if (u.nodoId || u.objetivoId || u.destino) continue;
+    ids.push(u.id);
   }
   return ids;
+}
+
+function publicarOciosos() {
+  const el = document.getElementById('val-ociosos');
+  const btn = document.getElementById('btn-ociosos');
+  if (!el) return;
+  const n = aldeanosOciosos().length;
+  el.textContent = String(n);
+  if (btn) btn.classList.toggle('vacio', n === 0);
 }
 
 let ociosoCursor = 0;
@@ -1785,6 +1989,11 @@ function emitirOrden(unidades, hit, w) {
   if (!unidades.length) return;
   const aldeanos = unidades.filter((u) => u.tipo === 'aldeano');
   const resto = unidades.filter((u) => u.tipo !== 'aldeano');
+  if (hit && hit.esEdificio && hit.tipo === 'granja' && hit.completo && aldeanos.length) {
+    ordenarGranja(aldeanos, hit);
+    if (resto.length) ordenarMovimiento(resto, hit.x, hit.y);
+    return;
+  }
   let nodo = hit && hit.clase === 'nodo' ? hit : null;
   if (!nodo && aldeanos.length) nodo = nodoBajoOrden(w.x, w.y);
   if (nodo) {
@@ -2039,6 +2248,7 @@ function alMover(e) {
     clampCamara();
     return;
   }
+  if (partida && partida.modo === 'colocar') return;
   if (gesto.modo === 'espera' && Math.hypot(p.x - gesto.x0, p.y - gesto.y0) > 12) gesto.modo = 'caja';
 }
 
@@ -2053,7 +2263,9 @@ function alSubir(e) {
   if (punteros.size > 0) return;
   const g = gesto;
   gesto = null;
-  if (g.modo === 'espera') manejarToque(g.x0, g.y0, false, g.shift, g.pointerType);
+  if (partida && partida.modo === 'colocar' && g.button !== 2 && g.modo !== 'arrastre' && g.modo !== 'borde') {
+    manejarToque(g.x, g.y, false, false, g.pointerType);
+  } else if (g.modo === 'espera') manejarToque(g.x0, g.y0, false, g.shift, g.pointerType);
   else if (g.modo === 'orden') manejarToque(g.x, g.y, true, false, g.pointerType);
   else if (g.modo === 'caja') seleccionarCaja(g.x0, g.y0, g.x, g.y, g.shift);
   refrescarInterfaz();
@@ -2160,12 +2372,24 @@ function registrarEntrada() {
   document.getElementById('btn-seguir').addEventListener('click', () => {
     document.getElementById('giro').classList.add('oculto');
   });
+  document.querySelectorAll('[data-dificultad]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const menu = document.getElementById('dificultad');
+      if (menu) menu.hidden = true;
+      crearPartida({ dificultad: btn.dataset.dificultad });
+      dibujar();
+      refrescarInterfaz();
+    });
+  });
   elComandos.addEventListener('click', (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;
     if (btn.dataset.accion === 'cancelar') cancelarColocacion();
     else if (btn.dataset.accion === 'cuartel') empezarColocacion('cuartel');
     else if (btn.dataset.accion === 'casa') empezarColocacion('casa');
+    else if (btn.dataset.accion === 'granja') empezarColocacion('granja');
+    else if (btn.dataset.accion === 'armas') mejorarArmas();
+    else if (btn.dataset.accion === 'muros') mejorarMuros();
     else if (btn.dataset.accion === 'entrenar') {
       const ed = edificioPropioUnico(seleccionEntidades());
       if (ed) entrenarVarios(ed, btn.dataset.tipo, e.shiftKey ? 5 : 1);
@@ -2204,11 +2428,13 @@ function nombreDe(e) {
     if (e.variante === 'huerta') return 'Huerta';
     if (e.variante === 'arbusto') return 'Arbusto';
     if (e.variante === 'bosque') return 'Bosque';
+    if (e.variante === 'caza') return 'Caza';
     return 'Mina de oro';
   }
   if (e.tipo === 'centro') return e.equipo === 'patriota' ? 'Centro urbano' : 'Centro urbano realista';
   if (e.tipo === 'cuartel') return e.equipo === 'patriota' ? 'Cuartel' : 'Cuartel realista';
   if (e.tipo === 'casa') return e.equipo === 'patriota' ? 'Casa' : 'Casa realista';
+  if (e.tipo === 'granja') return 'Granja';
   if (e.tipo === 'aldeano') return e.equipo === 'patriota' ? 'Aldeano' : 'Aldeano realista';
   if (e.tipo === 'fusilero') return 'Fusilero patriota';
   if (e.tipo === 'lancero') return 'Lancero llanero';
@@ -2268,15 +2494,31 @@ function renderComandos() {
     html = htmlBotonEntrenar('aldeano');
   } else if (ed && ed.tipo === 'cuartel') {
     html = htmlBotonEntrenar('fusilero') + htmlBotonEntrenar('lancero');
+    if (!partida.armas) {
+      html += '<button type="button" data-accion="armas" class="' + (puedePagar(COSTO.armas) ? '' : 'insuficiente') + '">' +
+        '<span class="btn-titulo">Afinar armas</span>' +
+        '<span class="btn-costo">' + textoCosto(COSTO.armas) + '</span></button>';
+    }
+    if (!ed.muros) {
+      html += '<button type="button" data-accion="muros" class="' + (puedePagar(COSTO.muros) ? '' : 'insuficiente') + '">' +
+        '<span class="btn-titulo">Muros de estacas</span>' +
+        '<span class="btn-costo">' + textoCosto(COSTO.muros) + '</span></button>';
+    }
+  } else if (ed && ed.tipo === 'granja') {
+    html = '<p class="nota-obra">Comida lenta. Hasta 3 aldeanos.</p>';
   } else if (hayAldeanos) {
     const claseCuartel = puedePagar(COSTO.cuartel) ? '' : 'insuficiente';
     const claseCasa = puedePagar(COSTO.casa) ? '' : 'insuficiente';
+    const claseGranja = puedePagar(COSTO.granja) ? '' : 'insuficiente';
     html = '<button type="button" data-accion="cuartel" class="' + claseCuartel + '">' +
       '<span class="btn-titulo">Construir cuartel</span>' +
       '<span class="btn-costo">' + textoCosto(COSTO.cuartel) + '</span></button>' +
       '<button type="button" data-accion="casa" class="' + claseCasa + '">' +
       '<span class="btn-titulo">Construir casa</span>' +
-      '<span class="btn-costo">' + textoCosto(COSTO.casa) + ' · +5 población</span></button>';
+      '<span class="btn-costo">' + textoCosto(COSTO.casa) + ' · +5 población</span></button>' +
+      '<button type="button" data-accion="granja" class="' + claseGranja + '">' +
+      '<span class="btn-titulo">Construir granja</span>' +
+      '<span class="btn-costo">' + textoCosto(COSTO.granja) + ' · comida lenta</span></button>';
   }
   if (ed && ed.completo && ed.cola.length) {
     html += '<div class="cola"><span class="cola-texto"></span><div class="progreso"><span></span></div></div>';
@@ -2345,7 +2587,7 @@ function textoPista() {
     return 'Tu centro urbano ha caído.';
   }
   if (partida.modo === 'colocar') {
-    const obra = partida.construir === 'casa' ? 'la casa' : 'el cuartel';
+    const obra = partida.construir === 'casa' ? 'la casa' : partida.construir === 'granja' ? 'la granja' : 'el cuartel';
     return tacto
       ? 'Toca el terreno para colocar ' + obra + '.'
       : 'Clic en el terreno para colocar ' + obra + '. Escape cancela.';
@@ -2369,7 +2611,7 @@ function textoPista() {
       ? 'Toca el terreno para mover o un enemigo para atacar.'
       : 'Clic derecho: mover o atacar.';
   }
-  if (edificio) return 'Entrena fusileros y lanceros. Salen frente al edificio.';
+  if (edificio) return 'Entrena tropas, afina armas o levanta muros. La madera sobrante también paga casas y granjas.';
   return tacto
     ? 'Toca para seleccionar. Toca el terreno para mover.'
     : 'Clic izquierdo selecciona. Mayús suma. Clic derecho mueve. Coma o Q: ejército.';
@@ -2390,6 +2632,7 @@ function aviso(texto) {
 }
 
 function refrescarInterfaz() {
+  if (!partida) return;
   const comida = Math.floor(partida.comida);
   const madera = Math.floor(partida.madera);
   const oro = Math.floor(partida.oro);
@@ -2413,11 +2656,7 @@ function refrescarInterfaz() {
   const reloj = textoReloj(partida.tiempo);
   elTiempo.textContent = reloj;
   cache.reloj = reloj;
-  const ociosos = aldeanosOciosos().length;
-  const elOciosos = document.getElementById('val-ociosos');
-  const btnOciosos = document.getElementById('btn-ociosos');
-  if (elOciosos) elOciosos.textContent = String(ociosos);
-  if (btnOciosos) btnOciosos.classList.toggle('vacio', ociosos === 0);
+  publicarOciosos();
   const firma = firmaComandos();
   if (firma !== cache.firma) {
     cache.firma = firma;
@@ -2741,6 +2980,24 @@ function dibujarCentro(b) {
   ctx.restore();
 }
 
+function dibujarGranja(b) {
+  const obra = b.completo ? 1 : Math.max(0.05, b.obra || 0);
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.fillStyle = '#6b4428';
+  ctx.fillRect(-40, -8, 4, 28);
+  ctx.fillRect(36, -8, 4, 28);
+  ctx.fillRect(-40, 16, 80, 4);
+  ctx.fillStyle = '#c2a15a';
+  ctx.fillRect(-34, 4 - 18 * obra, 68, 18 * obra);
+  ctx.fillStyle = '#3f8a3c';
+  if (obra > 0.4) {
+    for (let i = 0; i < 4; i++) ctx.fillRect(-28, 6 + i * 4, 56, 2);
+  }
+  if (!b.completo) dibujarAndamio(b.ancho || 96, b.alto || 72);
+  ctx.restore();
+}
+
 function dibujarCasa(b) {
   const obra = b.completo ? 1 : Math.max(0.05, b.obra || 0);
   ctx.save();
@@ -2829,6 +3086,16 @@ function dibujarNodo(n) {
       const w = 50 * a.escala;
       ctx.drawImage(img, n.x + a.ox - w / 2, n.y + a.oy - w * 0.8, w, w);
     }
+  } else if (n.variante === 'caza') {
+    ctx.fillStyle = '#6b4428';
+    ctx.beginPath();
+    ctx.ellipse(n.x, n.y + 6, 22, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#c45a3a';
+    ctx.beginPath();
+    ctx.arc(n.x - 8, n.y - 2, 7, 0, Math.PI * 2);
+    ctx.arc(n.x + 8, n.y - 4, 6, 0, Math.PI * 2);
+    ctx.fill();
   } else if (n.variante === 'huerta') {
     const w = 84 * (0.8 + 0.2 * resta);
     ctx.drawImage(sprites.huerta, n.x - w / 2, n.y - w * 0.38, w, w * 0.68);
@@ -2946,6 +3213,7 @@ function dibujarMinimapa() {
 }
 
 function dibujar() {
+  if (!partida) return;
   ctx.setTransform(vista.dpr, 0, 0, vista.dpr, 0, 0);
   ctx.fillStyle = '#7d9a48';
   ctx.fillRect(0, 0, vista.w, vista.h);
@@ -2974,10 +3242,11 @@ function dibujar() {
     if (capa.ruina) dibujarEscombro(capa.ruina);
     else if (capa.edificio.tipo === 'centro') dibujarCentro(capa.edificio);
     else if (capa.edificio.tipo === 'casa') dibujarCasa(capa.edificio);
+    else if (capa.edificio.tipo === 'granja') dibujarGranja(capa.edificio);
     else dibujarCuartel(capa.edificio);
   }
   if (partida.modo === 'colocar') {
-    const tipoObra = partida.construir === 'casa' ? 'casa' : 'cuartel';
+    const tipoObra = partida.construir === 'casa' ? 'casa' : partida.construir === 'granja' ? 'granja' : 'cuartel';
     const spec = EDIF[tipoObra];
     const valida = posicionValida(punteroMundo.x, punteroMundo.y, tipoObra);
     const fantasma = {
@@ -2993,10 +3262,15 @@ function dibujar() {
     ctx.save();
     ctx.globalAlpha = 0.62;
     if (tipoObra === 'casa') dibujarCasa(fantasma);
+    else if (tipoObra === 'granja') dibujarGranja(fantasma);
     else dibujarCuartel(fantasma);
+    if (!valida) {
+      ctx.fillStyle = 'rgba(180, 32, 32, 0.45)';
+      ctx.fillRect(punteroMundo.x - spec.ancho / 2, punteroMundo.y - spec.alto / 2, spec.ancho, spec.alto);
+    }
     ctx.restore();
-    ctx.strokeStyle = valida ? '#d7ec9a' : '#ff8f8f';
-    ctx.lineWidth = 2 / cam.zoom;
+    ctx.strokeStyle = valida ? '#d7ec9a' : '#ff4d4d';
+    ctx.lineWidth = 3 / cam.zoom;
     ctx.strokeRect(
       punteroMundo.x - spec.ancho / 2,
       punteroMundo.y - spec.alto / 2,
@@ -3115,6 +3389,10 @@ function ajustarTamano() {
 
 function bucle(ahora) {
   requestAnimationFrame(bucle);
+  if (!partida) {
+    ultimo = ahora;
+    return;
+  }
   const dtReal = Math.min(0.05, (ahora - ultimo) / 1000);
   ultimo = ahora;
   if (dtReal > 0) paso(dtReal);
@@ -3131,6 +3409,8 @@ function resumenPublico() {
     madera: Math.floor(partida.madera),
     oro: Math.floor(partida.oro),
     tiempo: partida.tiempo,
+    dificultad: partida.dificultad,
+    armas: !!partida.armas,
     oleada: partida.ia ? partida.ia.oleada : 0,
     avisosOla: partida.ia ? partida.ia.avisosOla || 0 : 0,
     poblacion: calcularPoblacion(),
@@ -3153,6 +3433,7 @@ function resumenPublico() {
       nodoId: u.nodoId,
       carga: u.carga,
       cargaTipo: u.cargaTipo,
+      dano: u.dano,
     })),
     edificios: partida.edificios.filter((b) => !b.muerto).map((b) => ({
       id: b.id,
@@ -3192,17 +3473,26 @@ function iniciar() {
     generarTerreno();
     ajustarTamano();
     const params = new URLSearchParams(location.search);
-    crearPartida({
-      demo: params.has('victoria'),
-      auto: params.has('auto') && !params.has('victoria'),
-    });
+    const forzada = params.get('dificultad');
+    const directa = params.has('victoria') || params.has('auto') || !!forzada;
+    if (directa) {
+      const menu = document.getElementById('dificultad');
+      if (menu) menu.hidden = true;
+      crearPartida({
+        demo: params.has('victoria'),
+        auto: params.has('auto') && !params.has('victoria'),
+        dificultad: forzada === 'facil' || forzada === 'normal' || forzada === 'dificil' ? forzada : 'dificil',
+      });
+    }
     registrarEntrada();
     window.addEventListener('resize', ajustarTamano);
     if (window.visualViewport) window.visualViewport.addEventListener('resize', ajustarTamano);
     document.addEventListener('visibilitychange', () => { ultimo = performance.now(); });
     ultimo = performance.now();
-    dibujar();
-    refrescarInterfaz();
+    if (partida) {
+      dibujar();
+      refrescarInterfaz();
+    }
     ocultarCarga();
     requestAnimationFrame(bucle);
   };
@@ -3236,6 +3526,43 @@ window.__LIBERTAD = {
     refrescarInterfaz();
   },
   reiniciar,
+  enfrentar(nPat, nReal) {
+    const cx = 1100;
+    const cy = 700;
+    const creados = [];
+    for (let i = 0; i < nPat; i++) {
+      creados.push(crearUnidad('fusilero', 'patriota', cx - 90, cy + (i - nPat / 2) * 16));
+    }
+    for (let i = 0; i < nReal; i++) {
+      const tipo = i % 5 === 4 ? 'dragon' : 'fusilero_realista';
+      creados.push(crearUnidad(tipo, 'realista', cx + 90, cy + (i - nReal / 2) * 16));
+    }
+    for (const u of creados) {
+      if (u.equipo !== 'patriota') continue;
+      let mejor = null;
+      let mejorD = Infinity;
+      for (const r of creados) {
+        if (r.equipo !== 'realista') continue;
+        const d = Math.hypot(r.x - u.x, r.y - u.y);
+        if (d < mejorD) { mejorD = d; mejor = r; }
+      }
+      if (mejor) ordenarAtaque([u], mejor);
+    }
+    for (const u of creados) {
+      if (u.equipo !== 'realista') continue;
+      let mejor = null;
+      let mejorD = Infinity;
+      for (const p of creados) {
+        if (p.equipo !== 'patriota') continue;
+        const d = Math.hypot(p.x - u.x, p.y - u.y);
+        if (d < mejorD) { mejorD = d; mejor = p; }
+      }
+      if (mejor) {
+        u.estado = 'atacar';
+        u.objetivoId = mejor.id;
+      }
+    }
+  },
   danar(id, cantidad) {
     const e = porId(id);
     if (!e || e.muerto) return;
