@@ -32,8 +32,8 @@ const STAT = {
 
 const COSTO = {
   aldeano: { comida: 70, madera: 0, oro: 0, tiempo: 8, poblacion: 1 },
-  cuartel: { comida: 0, madera: 160, oro: 0, tiempo: TIEMPO_OBRA },
-  fusilero: { comida: 60, madera: 35, oro: 45, tiempo: 9, poblacion: 1 },
+  cuartel: { comida: 0, madera: 120, oro: 0, tiempo: TIEMPO_OBRA },
+  fusilero: { comida: 50, madera: 15, oro: 40, tiempo: 8, poblacion: 1 },
   lancero: { comida: 70, madera: 25, oro: 70, tiempo: 12, poblacion: 2 },
   fusilero_realista: { comida: 60, madera: 0, oro: 40, tiempo: 8, poblacion: 1 },
   dragon: { comida: 70, madera: 0, oro: 65, tiempo: 11, poblacion: 2 },
@@ -153,7 +153,8 @@ function pantallaAMundo(x, y) {
 
 function zoomMinimo() {
   if (!vista.w || !vista.h) return 0.7;
-  return Math.min(ZOOM_MAX, Math.max(vista.w / MUNDO.w, vista.h / MUNDO.h));
+  const cubre = Math.max((vista.w + 2) / MUNDO.w, (vista.h + 2) / MUNDO.h);
+  return Math.min(ZOOM_MAX, cubre);
 }
 
 function clampCamara() {
@@ -311,7 +312,7 @@ function crearPartida(opciones) {
     autoAlternar: false,
     comida: 190,
     madera: 100,
-    oro: 80,
+    oro: 200,
     tope: TOPE_POBLACION,
     modo: 'normal',
     constructores: [],
@@ -329,7 +330,7 @@ function crearPartida(opciones) {
       madera: 220,
       oro: 80,
       oleada: 0,
-      oleadaEn: 180,
+      oleadaEn: 300,
       reintentoCuartel: 8,
       cuartelesLevantados: 0,
       avisoCuartel: false,
@@ -859,10 +860,10 @@ function actualizarEntrega(u, dt) {
     return;
   }
   if (u.carga > 0 && u.cargaTipo) depositar(u, u.carga, u.cargaTipo);
-  const tipo = u.cargaTipo;
   u.carga = 0;
+  u.cargaTipo = null;
   let nodo = porId(u.nodoId);
-  if (!nodo || nodo.cantidad <= 0 || (tipo && nodo.tipo !== tipo)) nodo = nodoMasCercano(u, tipo || 'comida');
+  if (!nodo || nodo.cantidad <= 0) nodo = null;
   if (nodo) {
     u.nodoId = nodo.id;
     u.estado = 'recolectar';
@@ -1026,10 +1027,11 @@ function actualizarColas(dt) {
 }
 
 function planOleada(n) {
+  if (n <= 1) return { inf: 2, cab: 0, espera: 75 };
   return {
-    inf: Math.min(8, 1 + n),
-    cab: n < 2 ? 1 : Math.min(4, n),
-    espera: Math.max(32, 50 - n * 4),
+    inf: Math.min(8, n + 1),
+    cab: Math.min(4, n - 1),
+    espera: Math.max(40, 75 - n * 5),
   };
 }
 
@@ -1092,7 +1094,17 @@ function lanzarOleada() {
   }
   ia.oleada += 1;
   const plan = planOleada(ia.oleada);
-  const enviar = disponibles.slice();
+  const inf = disponibles.filter((u) => u.tipo === 'fusilero_realista');
+  const cab = disponibles.filter((u) => u.tipo === 'dragon');
+  const elegir = inf.slice(0, plan.inf).concat(cab.slice(0, plan.cab));
+  const ids = new Set(elegir.map((u) => u.id));
+  const enviar = elegir.slice();
+  if (!enviar.length) {
+    for (const u of disponibles) {
+      if (enviar.length >= Math.max(1, plan.inf + plan.cab)) break;
+      if (!ids.has(u.id)) enviar.push(u);
+    }
+  }
   ia.oleadaEn = plan.espera;
   if (!tc || !enviar.length) {
     ia.ataquePendiente = true;
@@ -1679,6 +1691,15 @@ function manejarToque(sx, sy, soloOrden, shift, pointerType) {
   else partida.seleccion = [hit.id];
 }
 
+function cajaTocaUnidad(caja, u) {
+  const tam = tamanoSprite(u);
+  const izquierda = u.x - tam * 0.34;
+  const derecha = u.x + tam * 0.34;
+  const arriba = u.y - tam * (1 - PIVOTE.desdeAbajo);
+  const abajo = u.y + 6;
+  return izquierda <= caja.derecha && derecha >= caja.izquierda && arriba <= caja.abajo && abajo >= caja.arriba;
+}
+
 function seleccionarCaja(x0, y0, x1, y1, shift) {
   if (partida.fase !== 'jugando' || partida.modo === 'colocar') return;
   const a = pantallaAMundo(x0, y0);
@@ -1688,9 +1709,10 @@ function seleccionarCaja(x0, y0, x1, y1, shift) {
   const miny = Math.min(a.y, b.y);
   const maxy = Math.max(a.y, b.y);
   const ids = [];
+  const caja = { izquierda: minx, derecha: maxx, arriba: miny, abajo: maxy };
   for (const u of partida.unidades) {
     if (u.muerto || u.equipo !== 'patriota') continue;
-    if (u.x >= minx && u.x <= maxx && u.y >= miny && u.y <= maxy) ids.push(u.id);
+    if (cajaTocaUnidad(caja, u)) ids.push(u.id);
   }
   if (shift) {
     const conjunto = new Set(partida.seleccion.concat(ids));
@@ -2742,8 +2764,10 @@ function dibujar() {
 
 function ajustarTamano() {
   vista.dpr = Math.min(2, window.devicePixelRatio || 1);
-  vista.w = window.innerWidth;
-  vista.h = window.innerHeight;
+  vista.w = Math.max(1, window.innerWidth);
+  vista.h = Math.max(1, window.innerHeight);
+  lienzo.style.width = vista.w + 'px';
+  lienzo.style.height = vista.h + 'px';
   lienzo.width = Math.max(1, Math.floor(vista.w * vista.dpr));
   lienzo.height = Math.max(1, Math.floor(vista.h * vista.dpr));
   const rect = minimapa.getBoundingClientRect();
@@ -2840,9 +2864,12 @@ function iniciar() {
     if (window.visualViewport) window.visualViewport.addEventListener('resize', ajustarTamano);
     document.addEventListener('visibilitychange', () => { ultimo = performance.now(); });
     ultimo = performance.now();
+    dibujar();
+    refrescarInterfaz();
     ocultarCarga();
     requestAnimationFrame(bucle);
   };
+  ajustarTamano();
   requestAnimationFrame(() => requestAnimationFrame(arranque));
 }
 
