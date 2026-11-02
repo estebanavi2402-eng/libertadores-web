@@ -395,6 +395,28 @@ button.insuficiente {
 
 @media (orientation: portrait) and (max-width: 820px) {
   #giro:not(.oculto) { display: flex; }
+  #minimapa {
+    top: 56px;
+    bottom: auto;
+    right: 8px;
+    width: 104px;
+    height: 66px;
+  }
+  #pista { max-width: calc(100vw - 128px); }
+  #barra-inferior {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    padding-top: 8px;
+  }
+  #ficha {
+    order: -1;
+    flex: none;
+    width: 100%;
+    padding-bottom: 0;
+  }
+  #grupo-sistema, #comandos { width: 100%; }
+  #comandos button { flex: 1 1 100%; }
 }
 
 @media (max-width: 720px) {
