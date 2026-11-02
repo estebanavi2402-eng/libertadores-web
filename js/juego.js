@@ -24,6 +24,8 @@ const EDIF = {
   cuartel: { hp: 980, ancho: 132, alto: 86 },
   casa: { hp: 360, ancho: 64, alto: 56 },
   granja: { hp: 420, ancho: 96, alto: 72 },
+  maderero: { hp: 280, ancho: 78, alto: 58 },
+  minero: { hp: 280, ancho: 78, alto: 58 },
 };
 
 const STAT = {
@@ -39,6 +41,8 @@ const COSTO = {
   cuartel: { comida: 0, madera: 120, oro: 0, tiempo: TIEMPO_OBRA },
   casa: { comida: 0, madera: 70, oro: 0, tiempo: 10 },
   granja: { comida: 0, madera: 110, oro: 0, tiempo: 16 },
+  maderero: { comida: 0, madera: 80, oro: 0, tiempo: 12 },
+  minero: { comida: 0, madera: 80, oro: 0, tiempo: 12 },
   armas: { comida: 0, madera: 220, oro: 0 },
   muros: { comida: 0, madera: 180, oro: 0 },
   fusilero: { comida: 34, madera: 30, oro: 40, tiempo: 8, poblacion: 1 },
@@ -54,7 +58,10 @@ const NODOS = [
   ['comida', 'huerta', 640, 1140, 460, 34],
   ['comida', 'arbusto', 80, 1160, 300, 22],
   ['comida', 'caza', 140, 1320, 420, 28],
-  ['madera', 'bosque', 800, 960, 980, 48],
+  ['madera', 'bosque', 800, 960, 1800, 52],
+  ['madera', 'bosque', 210, 760, 1500, 54],
+  ['madera', 'bosque', 560, 680, 1700, 58],
+  ['madera', 'bosque', 740, 620, 1500, 52],
   ['oro', 'mina', 900, 1080, 720, 30],
   ['oro', 'mina', 1080, 920, 1100, 36],
   ['comida', 'arbusto', 1660, 230, 340, 26],
@@ -178,8 +185,10 @@ function clampCamara() {
   const mitadH = vista.h / (2 * cam.zoom);
   if (mitadW * 2 >= MUNDO.w - 1) cam.x = MUNDO.w / 2;
   else cam.x = clamp(cam.x, mitadW, MUNDO.w - mitadW);
-  if (mitadH * 2 >= MUNDO.h - 1) cam.y = MUNDO.h / 2;
-  else cam.y = clamp(cam.y, mitadH, MUNDO.h - mitadH);
+  const barra = document.getElementById('barra-inferior');
+  const extraSur = (barra ? Math.max(88, barra.getBoundingClientRect().height) : 100) / cam.zoom;
+  if (mitadH * 2 >= MUNDO.h - 1) cam.y = MUNDO.h / 2 + extraSur * 0.35;
+  else cam.y = clamp(cam.y, mitadH, MUNDO.h - mitadH + extraSur);
 }
 
 function enfoque(x, y, zoom) {
@@ -567,7 +576,8 @@ function moverHacia(u, tx, ty, dt) {
   // el camino, el aldeano se corre de lado y lo bordea.
   const xAntes = u.x;
   const yAntes = u.y;
-  let restante = u.velocidad * dt;
+  const vel = u.estado === 'mover' && u.velGrupo ? u.velGrupo : u.velocidad;
+  let restante = vel * dt;
   let guard = 0;
   while (restante > 0.2 && guard < 64) {
     guard += 1;
@@ -677,6 +687,8 @@ function sacarDeEdificios(u) {
 
 function ordenarMovimiento(lista, x, y) {
   if (!lista.length) return;
+  let lenta = Infinity;
+  for (const u of lista) lenta = Math.min(lenta, u.velocidad);
   const cols = Math.max(1, Math.ceil(Math.sqrt(lista.length)));
   const filas = Math.ceil(lista.length / cols);
   lista.forEach((u, i) => {
@@ -692,6 +704,7 @@ function ordenarMovimiento(lista, x, y) {
     u.objetivoId = null;
     u.asaltoId = null;
     u.nodoId = null;
+    u.velGrupo = lenta;
   });
   marcar(x, y);
 }
@@ -721,9 +734,11 @@ function ordenarRecoleccion(lista, nodo) {
   for (const u of lista) {
     u.estado = 'recolectar';
     u.nodoId = nodo.id;
+    u.recurso = nodo.tipo;
     u.objetivoId = null;
     u.asaltoId = null;
     u.destino = null;
+    u.velGrupo = 0;
     u.temporizador = 0.2;
   }
 }
@@ -922,9 +937,9 @@ function actualizarRecoleccion(u, dt) {
     u.frente = nodo.x >= u.x ? 1 : -1;
     u.temporizador -= dt;
     if (u.temporizador > 0) return;
-    u.temporizador = 1.75;
-    const tope = 8;
-    const toma = Math.min(2, tope - u.carga);
+    u.temporizador = 2.8;
+    const tope = 5;
+    const toma = Math.min(1, tope - u.carga);
     if (toma <= 0) {
       u.estado = 'entregar';
       return;
@@ -935,10 +950,18 @@ function actualizarRecoleccion(u, dt) {
     return;
   }
   if (!nodo || nodo.cantidad <= 0) {
-    nodo = nodoMasCercano(u, u.cargaTipo || 'comida');
-    if (nodo && u.carga < u.cargaMax) u.nodoId = nodo.id;
-    else {
-      u.estado = u.carga > 0 ? 'entregar' : 'quieto';
+    const tipo = u.recurso || u.cargaTipo;
+    nodo = tipo ? nodoMasCercano(u, tipo) : null;
+    if (nodo && u.carga < u.cargaMax) {
+      u.nodoId = nodo.id;
+      u.recurso = nodo.tipo;
+    } else if (u.carga > 0) {
+      u.estado = 'entregar';
+      return;
+    } else {
+      if (tipo) avisarSinRecurso(tipo);
+      u.estado = 'quieto';
+      u.nodoId = null;
       return;
     }
   }
@@ -970,11 +993,42 @@ function actualizarRecoleccion(u, dt) {
 function ritmoRecoleccion(tipo) {
   if (tipo === 'comida') return { cada: 0.95, toma: 4, carga: 14 };
   if (tipo === 'madera') return { cada: 0.75, toma: 6, carga: 18 };
-  return { cada: 1.45, toma: 3, carga: 9 };
+  return { cada: 1.7, toma: 3, carga: 8 };
+}
+
+function avisarSinRecurso(tipo) {
+  if (!partida || partida.fase !== 'jugando') return;
+  const ahora = partida.tiempo;
+  if (partida.ultimoAvisoRecurso && partida.ultimoAvisoRecurso.tipo === tipo && ahora - partida.ultimoAvisoRecurso.t < 10) return;
+  partida.ultimoAvisoRecurso = { tipo, t: ahora };
+  const nombre = tipo === 'madera' ? 'madera' : tipo === 'oro' ? 'oro' : 'comida';
+  aviso('No queda ' + nombre + ' en el mapa.');
+}
+
+function aceptaCarga(b, tipo) {
+  if (!b || b.muerto || !b.completo || !tipo) return false;
+  if (b.tipo === 'centro') return true;
+  if (b.tipo === 'maderero') return tipo === 'madera';
+  if (b.tipo === 'minero') return tipo === 'oro';
+  return false;
+}
+
+function depositoDe(u) {
+  let mejor = null;
+  let mejorD = Infinity;
+  for (const b of partida.edificios) {
+    if (b.equipo !== u.equipo || !aceptaCarga(b, u.cargaTipo || u.recurso)) continue;
+    const d = distanciaAlBorde(u, b);
+    if (d < mejorD) {
+      mejorD = d;
+      mejor = b;
+    }
+  }
+  return mejor || centroDe(u.equipo);
 }
 
 function actualizarEntrega(u, dt) {
-  const tc = centroDe(u.equipo);
+  const tc = depositoDe(u);
   if (!tc) {
     u.estado = 'quieto';
     return;
@@ -983,16 +1037,24 @@ function actualizarEntrega(u, dt) {
     moverHacia(u, tc.x, tc.y, dt);
     return;
   }
+  const tipo = u.cargaTipo || u.recurso;
   if (u.carga > 0 && u.cargaTipo) depositar(u, u.carga, u.cargaTipo);
   u.carga = 0;
   u.cargaTipo = null;
   let nodo = porId(u.nodoId);
-  if (!nodo || nodo.cantidad <= 0) nodo = null;
+  if (esGranja(nodo)) {
+    u.estado = 'recolectar';
+    u.temporizador = 0.15;
+    return;
+  }
+  if (!nodo || nodo.cantidad <= 0) nodo = tipo ? nodoMasCercano(u, tipo) : null;
   if (nodo) {
     u.nodoId = nodo.id;
+    u.recurso = nodo.tipo || tipo;
     u.estado = 'recolectar';
     u.temporizador = 0.15;
   } else {
+    if (tipo) avisarSinRecurso(tipo);
     u.estado = 'quieto';
     u.nodoId = null;
   }
@@ -1033,6 +1095,10 @@ function actualizarConstruccion(u, dt) {
       aviso('La granja está lista. Hasta tres aldeanos sacan comida lenta, sin agotarla.');
     } else if (b.equipo === 'patriota' && b.tipo === 'cuartel') {
       aviso('El cuartel está listo. Entrena fusileros y lanceros.');
+    } else if (b.equipo === 'patriota' && b.tipo === 'maderero') {
+      aviso('El campamento maderero está listo. La madera se entrega aquí si queda más cerca que el centro.');
+    } else if (b.equipo === 'patriota' && b.tipo === 'minero') {
+      aviso('El campamento minero está listo. El oro se entrega aquí si queda más cerca que el centro.');
     }
   }
 }
@@ -1174,10 +1240,10 @@ function planOleada(n) {
     return { inf: 2, cab: 1 };
   }
   if (dif !== 'dificil') {
-    if (n <= 1) return { inf: 1, cab: 0 };
-    if (n === 2) return { inf: 2, cab: 0 };
-    if (n === 3) return { inf: 2, cab: 0 };
-    return { inf: 2, cab: 1 };
+    if (n <= 1) return { inf: 3, cab: 0 };
+    if (n === 2) return { inf: 4, cab: 0 };
+    if (n === 3) return { inf: 3, cab: 1 };
+    return { inf: 4, cab: 1 };
   }
   if (n <= 1) return { inf: 2, cab: 0 };
   if (n === 2) return { inf: 3, cab: 1 };
@@ -1195,15 +1261,15 @@ function reservaGuarnicion() {
     return 4;
   }
   if (dif !== 'dificil') {
-    if (t < 300) return 3;
-    if (t < 600) return 4;
-    if (t < 900) return 5;
-    return 6;
+    if (t < 300) return 2;
+    if (t < 600) return 2;
+    if (t < 900) return 3;
+    return 4;
   }
   if (t < 240) return 5;
   if (t < 480) return 7;
-  if (t < 780) return 9;
-  return 11;
+  if (t < 720) return 8;
+  return 8;
 }
 
 function casaRealista() {
@@ -1222,6 +1288,7 @@ function cupoEntrenamiento() {
   if (!pendiente) {
     const sig = planOleada(ia.oleada + 1);
     prep = sig.inf + sig.cab;
+    if (partida.dificultad === 'dificil') prep = Math.min(prep, 4);
   }
   return reservaGuarnicion() + pendiente + prep;
 }
@@ -1325,7 +1392,8 @@ function entrenarIA(cuartel) {
   if (!cuartel || !cuartel.completo || cuartel.muerto) return;
   const ia = partida.ia;
   if (cuartel.cola.length >= 2) return;
-  if (contarMilitares('realista') + cuartel.cola.length >= 22) return;
+  const topeCampo = partida.dificultad === 'dificil' ? 14 : 12;
+  if (contarMilitares('realista') + cuartel.cola.length >= topeCampo) return;
   if (casaRealista().length + cuartel.cola.length >= cupoEntrenamiento()) return;
   const dragones = casaRealista().filter((u) => u.tipo === 'dragon').length;
   const quiereCaballeria = ia.olaCab > dragones || ia.entrenados % 4 === 3;
@@ -1666,9 +1734,27 @@ function posicionValida(x, y, tipo) {
   return true;
 }
 
+function edificioEn(x, y) {
+  for (let i = partida.edificios.length - 1; i >= 0; i--) {
+    const b = partida.edificios[i];
+    if (b.muerto || b.hp <= 0) continue;
+    const m = marcoVisual(b);
+    if (Math.abs(b.x + m.ox - x) <= m.ancho / 2 && Math.abs(b.y + m.oy - y) <= m.alto / 2) return b;
+  }
+  return null;
+}
+
 function intentarColocar(x, y) {
   if (partida.fase !== 'jugando' || partida.modo !== 'colocar') return;
-  const tipo = partida.construir === 'casa' ? 'casa' : partida.construir === 'granja' ? 'granja' : 'cuartel';
+  const encima = edificioEn(x, y);
+  if (encima) {
+    partida.modo = 'normal';
+    partida.constructores = [];
+    partida.seleccion = [encima.id];
+    refrescarInterfaz();
+    return;
+  }
+  const tipo = partida.construir === 'casa' ? 'casa' : partida.construir === 'granja' ? 'granja' : partida.construir === 'maderero' ? 'maderero' : partida.construir === 'minero' ? 'minero' : 'cuartel';
   const costo = COSTO[tipo];
   if (!puedePagar(costo)) {
     aviso(faltaRecurso(costo) || 'Falta madera');
@@ -1718,6 +1804,8 @@ function intentarColocar(x, y) {
   const textos = {
     casa: 'Los aldeanos están levantando la casa.',
     granja: 'Los aldeanos están levantando la granja.',
+    maderero: 'Los aldeanos están levantando el campamento maderero.',
+    minero: 'Los aldeanos están levantando el campamento minero.',
     cuartel: 'Los aldeanos están levantando el cuartel.',
   };
   aviso(textos[tipo] || textos.cuartel);
@@ -1751,7 +1839,8 @@ function faltaRecurso(costo) {
 }
 
 function empezarColocacion(tipo) {
-  const obra = tipo === 'casa' ? 'casa' : tipo === 'granja' ? 'granja' : 'cuartel';
+  const obras = { casa: 1, granja: 1, maderero: 1, minero: 1, cuartel: 1 };
+  const obra = obras[tipo] ? tipo : 'cuartel';
   if (obra === 'casa' && casasPatriotas() >= Math.floor((TOPE_MAXIMO - TOPE_POBLACION) / TOPE_POR_CASA)) {
     aviso('La población ya está al máximo.');
     return;
@@ -1780,6 +1869,8 @@ function empezarColocacion(tipo) {
   const avisos = {
     casa: 'Toca el terreno para colocar la casa.',
     granja: 'Toca el terreno para colocar la granja.',
+    maderero: 'Toca el terreno para colocar el campamento maderero.',
+    minero: 'Toca el terreno para colocar el campamento minero.',
     cuartel: 'Toca el terreno para colocar el cuartel.',
   };
   aviso(avisos[obra]);
@@ -1972,13 +2063,26 @@ function toleranciaNodo(n) {
 }
 
 function nodoBajoOrden(x, y) {
+  let bosque = null;
+  let bosqueD = Infinity;
+  for (const n of partida.nodos) {
+    if (n.cantidad <= 0 || n.variante !== 'bosque') continue;
+    const d = Math.hypot(n.x - x, n.y - y);
+    if (d <= n.radio + 28 && d < bosqueD) {
+      bosqueD = d;
+      bosque = n;
+    }
+  }
+  if (bosque) return bosque;
   let mejor = null;
-  let mejorD = Infinity;
+  let mejorScore = Infinity;
   for (const n of partida.nodos) {
     if (n.cantidad <= 0) continue;
     const d = Math.hypot(n.x - x, n.y - y);
-    if (d <= toleranciaNodo(n) && d < mejorD) {
-      mejorD = d;
+    if (d > toleranciaNodo(n)) continue;
+    const score = d / Math.max(16, n.radio);
+    if (score < mejorScore) {
+      mejorScore = score;
       mejor = n;
     }
   }
@@ -2363,7 +2467,10 @@ function registrarEntrada() {
   escenario.addEventListener('pointerup', quitarFoco);
   escenario.addEventListener('click', quitarFoco);
   document.getElementById('btn-ejercito').addEventListener('click', seleccionarEjercito);
-  document.getElementById('btn-ociosos').addEventListener('click', seleccionarUnOcioso);
+  document.getElementById('btn-ociosos').addEventListener('click', (e) => {
+    if (e.detail >= 2) seleccionarOciosos();
+    else seleccionarUnOcioso();
+  });
   document.getElementById('btn-cerrar-pista').addEventListener('click', () => {
     document.getElementById('pista').classList.add('oculta');
   });
@@ -2388,6 +2495,8 @@ function registrarEntrada() {
     else if (btn.dataset.accion === 'cuartel') empezarColocacion('cuartel');
     else if (btn.dataset.accion === 'casa') empezarColocacion('casa');
     else if (btn.dataset.accion === 'granja') empezarColocacion('granja');
+    else if (btn.dataset.accion === 'maderero') empezarColocacion('maderero');
+    else if (btn.dataset.accion === 'minero') empezarColocacion('minero');
     else if (btn.dataset.accion === 'armas') mejorarArmas();
     else if (btn.dataset.accion === 'muros') mejorarMuros();
     else if (btn.dataset.accion === 'entrenar') {
@@ -2435,6 +2544,8 @@ function nombreDe(e) {
   if (e.tipo === 'cuartel') return e.equipo === 'patriota' ? 'Cuartel' : 'Cuartel realista';
   if (e.tipo === 'casa') return e.equipo === 'patriota' ? 'Casa' : 'Casa realista';
   if (e.tipo === 'granja') return 'Granja';
+  if (e.tipo === 'maderero') return 'Campamento maderero';
+  if (e.tipo === 'minero') return 'Campamento minero';
   if (e.tipo === 'aldeano') return e.equipo === 'patriota' ? 'Aldeano' : 'Aldeano realista';
   if (e.tipo === 'fusilero') return 'Fusilero patriota';
   if (e.tipo === 'lancero') return 'Lancero llanero';
@@ -2449,6 +2560,7 @@ function detalleDe(e) {
     return Math.ceil(e.cantidad) + ' ' + nombre;
   }
   let texto = 'Vida ' + Math.max(0, Math.ceil(e.hp)) + '/' + e.hpMax;
+  if (e.esUnidad && e.dano) texto += ' · Daño ' + e.dano;
   if (e.esUnidad && e.carga > 0) texto += ' · Lleva ' + e.carga + ' ' + e.cargaTipo;
   if (e.esEdificio && !e.completo) texto += ' · Obra ' + Math.floor(e.obra * 100) + '%';
   if (e.esEdificio && e.cola && e.cola.length) texto += ' · Cola ' + e.cola.length;
@@ -2518,7 +2630,13 @@ function renderComandos() {
       '<span class="btn-costo">' + textoCosto(COSTO.casa) + ' · +5 población</span></button>' +
       '<button type="button" data-accion="granja" class="' + claseGranja + '">' +
       '<span class="btn-titulo">Construir granja</span>' +
-      '<span class="btn-costo">' + textoCosto(COSTO.granja) + ' · comida lenta</span></button>';
+      '<span class="btn-costo">' + textoCosto(COSTO.granja) + ' · comida lenta</span></button>' +
+      '<button type="button" data-accion="maderero" class="' + (puedePagar(COSTO.maderero) ? '' : 'insuficiente') + '">' +
+      '<span class="btn-titulo">Campamento maderero</span>' +
+      '<span class="btn-costo">' + textoCosto(COSTO.maderero) + ' · entrega madera</span></button>' +
+      '<button type="button" data-accion="minero" class="' + (puedePagar(COSTO.minero) ? '' : 'insuficiente') + '">' +
+      '<span class="btn-titulo">Campamento minero</span>' +
+      '<span class="btn-costo">' + textoCosto(COSTO.minero) + ' · entrega oro</span></button>';
   }
   if (ed && ed.completo && ed.cola.length) {
     html += '<div class="cola"><span class="cola-texto"></span><div class="progreso"><span></span></div></div>';
@@ -2800,25 +2918,30 @@ function pintarHuerta() {
 
 function pintarMina() {
   return lienzoSprite(72, 56, (g) => {
-    g.fillStyle = 'rgba(0,0,0,0.2)';
+    g.fillStyle = 'rgba(0,0,0,0.22)';
     g.beginPath();
-    g.ellipse(36, 48, 22, 6, 0, 0, Math.PI * 2);
+    g.ellipse(36, 46, 24, 7, 0, 0, Math.PI * 2);
     g.fill();
-    g.fillStyle = '#8d8478';
+    g.fillStyle = '#3a342c';
     g.beginPath();
-    g.moveTo(10, 44);
-    g.lineTo(24, 18);
-    g.lineTo(40, 44);
-    g.fill();
-    g.fillStyle = '#6e675e';
-    g.beginPath();
-    g.moveTo(28, 44);
-    g.lineTo(48, 12);
-    g.lineTo(66, 44);
+    g.ellipse(36, 34, 22, 14, 0, 0, Math.PI * 2);
     g.fill();
     g.fillStyle = '#e2b33a';
-    g.fillRect(44, 28, 8, 5);
-    g.fillRect(30, 34, 6, 4);
+    g.beginPath();
+    g.ellipse(36, 34, 14, 8, 0, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#fff1b8';
+    g.beginPath();
+    g.ellipse(32, 32, 5, 3, 0, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = '#6b4428';
+    g.lineWidth = 3;
+    g.beginPath();
+    g.moveTo(18, 18);
+    g.lineTo(50, 42);
+    g.stroke();
+    g.fillStyle = '#c47a3a';
+    g.fillRect(14, 12, 10, 6);
     contorno(g, 2);
   });
 }
@@ -2879,8 +3002,12 @@ function generarTerreno() {
     const tipo = (aleatorio() * 3) | 0;
     const escala = 0.5 + aleatorio() * 0.45;
     const img = sprites['arbol' + tipo];
-    const w = 54 * escala;
+    const w = 36 * escala;
+    g.save();
+    g.globalAlpha = 0.28;
+    g.filter = 'grayscale(0.85)';
     g.drawImage(img, x - w / 2, y - w * 0.82, w, w);
+    g.restore();
   }
   terreno = c;
 }
@@ -2977,6 +3104,26 @@ function dibujarCentro(b) {
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.fillRect(-40, 16 - alto, 80, alto);
   }
+  ctx.restore();
+}
+
+function dibujarCampamento(b) {
+  const obra = b.completo ? 1 : Math.max(0.05, b.obra || 0);
+  const oro = b.tipo === 'minero';
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.fillStyle = 'rgba(0,0,0,0.16)';
+  ctx.beginPath();
+  ctx.ellipse(0, 16, 30, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = oro ? '#e2b33a' : '#8a5a32';
+  ctx.fillRect(-26, 8 - 16 * obra, 22, 16 * obra);
+  ctx.fillRect(-2, 12 - 12 * obra, 22, 12 * obra);
+  ctx.fillStyle = '#6b4428';
+  ctx.fillRect(-30, -6 * obra, 4, 22 * obra);
+  ctx.fillRect(26, -4 * obra, 4, 20 * obra);
+  ctx.fillRect(-30, 14, 60, 3);
+  if (!b.completo) dibujarAndamio(b.ancho || 78, b.alto || 58);
   ctx.restore();
 }
 
@@ -3243,10 +3390,11 @@ function dibujar() {
     else if (capa.edificio.tipo === 'centro') dibujarCentro(capa.edificio);
     else if (capa.edificio.tipo === 'casa') dibujarCasa(capa.edificio);
     else if (capa.edificio.tipo === 'granja') dibujarGranja(capa.edificio);
+    else if (capa.edificio.tipo === 'maderero' || capa.edificio.tipo === 'minero') dibujarCampamento(capa.edificio);
     else dibujarCuartel(capa.edificio);
   }
   if (partida.modo === 'colocar') {
-    const tipoObra = partida.construir === 'casa' ? 'casa' : partida.construir === 'granja' ? 'granja' : 'cuartel';
+    const tipoObra = EDIF[partida.construir] ? partida.construir : 'cuartel';
     const spec = EDIF[tipoObra];
     const valida = posicionValida(punteroMundo.x, punteroMundo.y, tipoObra);
     const fantasma = {
@@ -3263,6 +3411,7 @@ function dibujar() {
     ctx.globalAlpha = 0.62;
     if (tipoObra === 'casa') dibujarCasa(fantasma);
     else if (tipoObra === 'granja') dibujarGranja(fantasma);
+    else if (tipoObra === 'maderero' || tipoObra === 'minero') dibujarCampamento(fantasma);
     else dibujarCuartel(fantasma);
     if (!valida) {
       ctx.fillStyle = 'rgba(180, 32, 32, 0.45)';
