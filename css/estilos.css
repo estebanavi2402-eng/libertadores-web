@@ -298,10 +298,11 @@ button.insuficiente {
 
 #aviso {
   position: absolute;
-  z-index: 5;
+  z-index: 4;
   left: 50%;
-  top: 78px;
-  transform: translateX(-50%) translateY(-8px);
+  top: auto;
+  bottom: 96px;
+  transform: translateX(-50%) translateY(8px);
   background: var(--pergamino);
   color: var(--tinta);
   padding: 8px 12px;
@@ -311,7 +312,7 @@ button.insuficiente {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease, transform 0.2s ease;
-  max-width: min(420px, 80vw);
+  max-width: min(280px, 42vw);
   text-align: center;
   border: 2px solid var(--azul);
 }
@@ -427,7 +428,8 @@ button.insuficiente {
 
 @media (max-height: 420px) {
   #minimapa { width: 112px; height: 72px; bottom: 66px; top: auto; }
-  #pista { top: 42px; font-size: 14px; max-width: calc(100vw - 20px); }
+  #aviso { bottom: 72px; max-width: min(240px, 36vw); }
+  #pista { top: 42px; font-size: 14px; max-width: min(460px, calc(100vw - 20px)); }
   #cargando { font-size: 26px; }
   #barra-superior { min-height: 38px; }
   button { min-height: 42px; }
