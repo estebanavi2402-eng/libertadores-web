@@ -203,18 +203,39 @@ button.cerrar {
 #barra-inferior {
   bottom: 0;
   align-items: flex-end;
-  padding-top: 28px;
-  padding-bottom: max(8px, env(safe-area-inset-bottom));
-  background: linear-gradient(180deg, rgba(22, 14, 8, 0), rgba(22, 14, 8, 0.55) 28%, rgba(22, 14, 8, 0.92));
+  padding-top: 4px;
+  padding-bottom: max(6px, env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, rgba(22, 14, 8, 0), rgba(22, 14, 8, 0.9) 10px, rgba(22, 14, 8, 0.94));
   flex-wrap: wrap;
 }
 
-#grupo-sistema,
-#comandos {
+#grupo-sistema {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
 }
+
+#comandos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 158px);
+  gap: 6px;
+  align-content: start;
+  height: 86px;
+}
+
+#comandos button {
+  width: 158px;
+  min-height: 46px;
+}
+
+#comandos .cola {
+  grid-column: 1 / -1;
+  height: 22px;
+  overflow: hidden;
+  visibility: hidden;
+}
+
+#comandos .cola.activa { visibility: visible; }
 
 #ficha {
   flex: 1 1 140px;
