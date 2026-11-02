@@ -123,6 +123,15 @@ body.colocando #lienzo { cursor: cell; }
   color: white;
 }
 
+button.ociosos {
+  font: inherit;
+  cursor: pointer;
+  text-align: center;
+  min-width: 0;
+}
+
+button.ociosos.vacio { opacity: 0.55; }
+
 #pista {
   position: absolute;
   z-index: 5;
@@ -251,6 +260,14 @@ button:focus-visible { outline: 2px solid white; outline-offset: 2px; }
 button.secundario {
   background: transparent;
   color: var(--pergamino);
+}
+
+button.ociosos {
+  min-height: 30px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  line-height: 1.1;
+  text-align: center;
 }
 
 button.insuficiente {
