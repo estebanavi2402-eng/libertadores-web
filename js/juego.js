@@ -1526,7 +1526,7 @@ function planOleada(n) {
   }
   if (dif !== 'dificil') {
     const extra = Math.floor(Math.max(0, mil - 10) / 8);
-    if (n <= 1) return { inf: 4, cab: 0 };
+    if (n <= 1) return { inf: 3, cab: 0 };
     if (n === 2) return { inf: 4, cab: 0 };
     const inf = Math.min(6, 4 + Math.floor((n - 2) / 2) + extra);
     const cab = n >= 4 ? 1 : 0;
@@ -1771,6 +1771,12 @@ function actualizarIA(dt) {
   if (intruso) responderDefensa(intruso);
   ia.reintentoCuartel -= dt;
   ia.oleadaEn -= dt;
+  if (dif !== 'dificil' && ia.oleadaEn <= 20 && ia.oleadaEn > 0 && ia.preaviso !== ia.oleada + 1) {
+    ia.preaviso = ia.oleada + 1;
+    aviso(ia.oleada === 0
+      ? 'Se acerca la primera oleada. Llegará en unos veinte segundos.'
+      : 'Otra oleada realista llegará en unos veinte segundos.');
+  }
   let cuartel = null;
   for (const b of partida.edificios) {
     if (!b.muerto && b.tipo === 'cuartel' && b.equipo === 'realista') cuartel = b;
@@ -2087,8 +2093,17 @@ function comerciar(tipo) {
   refrescarInterfaz();
 }
 
+function centroEnPeligro() {
+  const tc = centroDe('patriota');
+  return !!(tc && tc.hp < tc.hpMax * 0.5);
+}
+
+function volverBloqueado() {
+  return enemigosJuntoAlCentro() && !centroEnPeligro();
+}
+
 function volverAlTrabajo() {
-  if (enemigosJuntoAlCentro()) {
+  if (volverBloqueado()) {
     aviso('Enemigos cerca. El centro todavía los tiene a tiro.');
     return 0;
   }
@@ -2144,19 +2159,21 @@ function actualizarDefensaCentro(dt) {
     for (const u of partida.unidades) {
       if (u.muerto || u.hp <= 0 || u.adentro || u.equipo === b.equipo) continue;
       const d = Math.hypot(u.x - b.x, u.y - b.y);
-      const alcance = u.ligero ? 280 : 150;
+      const alcance = u.ligero ? 280 : 190;
       if (d > alcance || d >= mejorD) continue;
       mejorD = d;
       mejor = u;
     }
     if (!mejor || b.recarga > 0) continue;
     const dentro = contarDentro(b);
-    const extra = Math.min(5, dentro);
-    const contraRaid = !!mejor.ligero && dentro > 0;
-    b.recarga = contraRaid ? 0.35 : (extra > 0 ? 0.55 : 0.9);
+    const extra = Math.min(20, dentro);
+    const esLigero = !!mejor.ligero;
+    b.recarga = esLigero
+      ? Math.max(0.32, 0.9 - extra * 0.03)
+      : Math.max(0.28, 1.05 - extra * 0.04);
     infligir({
-      dano: mejor.ligero ? (dentro > 0 ? 16 + extra * 4 : 12) : 4,
-      alcance: mejor.ligero ? 280 : 150,
+      dano: (esLigero ? 12 : 4) + extra * 2,
+      alcance: esLigero ? 280 : 190,
       equipo: b.equipo,
       tipo: 'centro',
       x: b.x,
@@ -2191,6 +2208,19 @@ function revisarReemplazo(dt) {
   aviso('Sin aldeanos, el centro repone uno sin costo.');
 }
 
+function ordenarConstruccion(lista, edificio) {
+  for (const u of lista) {
+    if (u.tipo !== 'aldeano' || u.adentro) continue;
+    u.estado = 'construir';
+    u.objetivoId = edificio.id;
+    u.nodoId = null;
+    u.recurso = null;
+    u.destino = null;
+    u.asaltoId = null;
+    u.velGrupo = 0;
+  }
+}
+
 function ordenarReparacion(lista, edificio) {
   for (const u of lista) {
     if (u.tipo !== 'aldeano' || u.adentro) continue;
@@ -2207,6 +2237,10 @@ function ordenarReparacion(lista, edificio) {
 
 function actualizarReparacion(u, dt) {
   const b = porId(u.objetivoId);
+  if (b && b.esEdificio && !b.completo && !b.muerto) {
+    u.estado = 'construir';
+    return;
+  }
   if (!b || b.muerto || !b.esEdificio || b.hp >= b.hpMax) {
     u.estado = 'quieto';
     u.objetivoId = null;
@@ -2684,7 +2718,12 @@ function emitirOrden(unidades, hit, w) {
   if (!unidades.length) return;
   const aldeanos = unidades.filter((u) => u.tipo === 'aldeano');
   const resto = unidades.filter((u) => u.tipo !== 'aldeano');
-  if (hit && hit.esEdificio && hit.equipo === 'patriota' && hit.hp < hit.hpMax && aldeanos.length && hit.tipo !== 'granja') {
+  if (hit && hit.esEdificio && hit.equipo === 'patriota' && !hit.completo && aldeanos.length) {
+    ordenarConstruccion(aldeanos, hit);
+    if (resto.length) ordenarMovimiento(resto, hit.x, hit.y);
+    return;
+  }
+  if (hit && hit.esEdificio && hit.equipo === 'patriota' && hit.completo && hit.hp < hit.hpMax && aldeanos.length && hit.tipo !== 'granja') {
     ordenarReparacion(aldeanos, hit);
     if (resto.length) ordenarMovimiento(resto, hit.x, hit.y);
     return;
@@ -3200,7 +3239,7 @@ function firmaComandos() {
   let firma = ents.map((e) => e.id + (e.completo === false ? 'o' : 'c')).join(',');
   if (ed) firma += (ed.completo ? '' : ':obra') + (partida.armas ? 'a' : '') + (ed.muros ? 'm' : '');
   const tcFirma = centroDe('patriota');
-  firma += '|d' + (tcFirma ? contarDentro(tcFirma) : 0) + (enemigosJuntoAlCentro() ? 'E' : '') + (reemplazoListo() ? 'R' : '');
+  firma += '|d' + (tcFirma ? contarDentro(tcFirma) : 0) + (volverBloqueado() ? 'E' : '') + (centroEnPeligro() ? 'P' : '') + (reemplazoListo() ? 'R' : '');
   return firma;
 }
 
@@ -3219,7 +3258,7 @@ function renderComandos() {
     const dentro = contarDentro(ed);
     html += '<button type="button" data-accion="campana"><span class="btn-titulo">Campana</span><span class="btn-costo">Guarecer aldeanos</span></button>';
     if (dentro > 0) {
-      const bloqueado = enemigosJuntoAlCentro();
+      const bloqueado = volverBloqueado();
       html += '<button type="button" data-accion="volver" class="' + (bloqueado ? 'insuficiente' : '') + '"' + (bloqueado ? ' disabled' : '') + '>' +
         '<span class="btn-titulo">Volver al trabajo</span><span class="btn-costo">' +
         (bloqueado ? 'Enemigos cerca' : dentro + ' dentro') + '</span></button>';
